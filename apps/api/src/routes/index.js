@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 
-const authRoutes = require('./auth.routes');
-const studioRoutes = require('./studio.routes');
-const adminRoutes = require('./admin.routes');
-const customerRoutes = require('./customer.routes');
+const authRoutes = require('./authRoutes');
+const studioRoutes = require('./studioRoutes');
+const adminRoutes = require('./adminRoutes');
+const customerRoutes = require('./customerRoutes');
 
 // System health check
 router.get('/health', (req, res) => {
@@ -12,7 +12,7 @@ router.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    service: 'photo-studio-api'
+    service: 'photo-studio-api',
   });
 });
 

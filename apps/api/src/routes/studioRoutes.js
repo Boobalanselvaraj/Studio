@@ -1,20 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const studioController = require('../controllers/studio.controller');
-const brandingController = require('../controllers/branding.controller');
-const customerController = require('../controllers/customer.controller');
+const studioController = require('../controllers/studioController');
+const brandingController = require('../controllers/brandingController');
+const customerController = require('../controllers/customerController');
 const { authenticate } = require('../middlewares/auth');
 const { resolveTenant } = require('../middlewares/tenant');
 
-// Sub-domain / Tenant routes
-const eventRoutes = require('./event.routes');
-const folderRoutes = require('./folder.routes');
-const tagRoutes = require('./tag.routes');
-const cameraRoutes = require('./camera.routes');
-const storageRoutes = require('./storage.routes');
-const billingRoutes = require('./billing.routes');
+// Sub-module route imports
+const eventRoutes = require('./eventRoutes');
+const folderRoutes = require('./folderRoutes');
+const tagRoutes = require('./tagRoutes');
+const cameraRoutes = require('./cameraRoutes');
+const storageRoutes = require('./storageRoutes');
+const billingRoutes = require('./billingRoutes');
 
-// All studio routes require authentication and tenant resolution
+// Tenant Guard
 router.use(authenticate);
 router.use(resolveTenant);
 
@@ -24,7 +24,7 @@ router.get('/branding', brandingController.getBranding);
 router.put('/branding', brandingController.updateBranding);
 router.get('/customers', customerController.listStudioCustomers);
 
-// Mount nested modules
+// Sub-modules
 router.use('/events', eventRoutes);
 router.use('/folders', folderRoutes);
 router.use('/tags', tagRoutes);

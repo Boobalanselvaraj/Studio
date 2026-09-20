@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const eventController = require('../controllers/event.controller');
-const taskController = require('../controllers/task.controller');
+const eventController = require('../controllers/eventController');
+const taskController = require('../controllers/taskController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
 // Events
@@ -14,5 +14,7 @@ router.get('/:id/history', eventController.getHistory);
 // Event Tasks
 router.get('/:eventId/tasks', taskController.getEventTasks);
 router.post('/:eventId/tasks', taskController.createTask);
+router.patch('/tasks/:id', taskController.updateTask);
+router.delete('/tasks/:id', taskController.deleteTask);
 
 module.exports = router;

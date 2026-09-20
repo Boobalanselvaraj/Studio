@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const folderController = require('../controllers/folder.controller');
+const folderController = require('../controllers/folderController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
 router.get('/tree', folderController.getTree);
