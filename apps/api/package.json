@@ -8,9 +8,14 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "prisma:push": "prisma db push --schema=prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=prisma/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "^6.4.1",
     "amqplib": "^0.10.4",
     "bcryptjs": "^2.4.3",
     "connect-redis": "^7.1.1",
@@ -29,6 +34,7 @@
   "devDependencies": {
     "jest": "^29.7.0",
     "nodemon": "^3.1.0",
+    "prisma": "^6.4.1",
     "supertest": "^7.0.0"
   }
 }

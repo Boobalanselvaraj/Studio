@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 function requireSuperAdmin(req, res, next) {
   if (!req.user || !req.user.is_super_admin) {
@@ -23,16 +23,21 @@ function requireStudioRole(allowedRoles = []) {
         return res.status(400).json({ error: 'Studio context missing for RBAC evaluation' });
       }
 
-      const roleRes = await db.query(
-        'SELECT role FROM studio_users WHERE studio_id = $1 AND user_id = $2',
-        [studioId, req.user.id]
-      );
+      const studioUser = await prisma.studio_users.findUnique({
+        where: {
+          studio_id_user_id: {
+            studio_id: studioId,
+            user_id: req.user.id,
+          },
+        },
+        select: { role: true },
+      });
 
-      if (roleRes.rows.length === 0) {
+      if (!studioUser) {
         return res.status(403).json({ error: 'Forbidden: You do not have access to this studio' });
       }
 
-      const userRole = roleRes.rows[0].role;
+      const userRole = studioUser.role;
       req.userStudioRole = userRole;
 
       if (allowedRoles.length > 0 && !allowedRoles.includes(userRole)) {
@@ -50,5 +55,5 @@ function requireStudioRole(allowedRoles = []) {
 
 module.exports = {
   requireSuperAdmin,
-  requireStudioRole
+  requireStudioRole,
 };

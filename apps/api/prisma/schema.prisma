@@ -1,0 +1,574 @@
+// ==============================================================================
+// Photo Studio SaaS Platform — Prisma 6 Schema (Full Snake_Case)
+// Multi-Tenant Architecture with Event Workflow, Folder Tree & Metered Billing
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================================================================
+// Enums
+// ==============================================================================
+
+enum studio_role {
+  studio_owner
+  studio_manager
+  photographer
+  staff
+}
+
+enum storage_provider_type {
+  platform
+  studio_owned
+}
+
+enum storage_backend {
+  local
+  sftp
+  s3
+  smb
+}
+
+enum event_status {
+  lead
+  booked
+  scheduled
+  shooting
+  editing
+  review
+  delivered
+  archived
+  cancelled
+}
+
+enum folder_item_type {
+  event
+  album
+  asset
+}
+
+enum tag_source {
+  manual
+  suggested
+}
+
+enum studio_billing_status {
+  active
+  past_due
+  suspended
+  comped
+}
+
+enum invoice_status {
+  draft
+  issued
+  paid
+  overdue
+  cancelled
+}
+
+// ==============================================================================
+// 1. Core Multi-Tenant Structure
+// ==============================================================================
+
+model studios {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(255)
+  slug          String   @unique @db.VarChar(100)
+  subdomain     String?  @unique @db.VarChar(100)
+  custom_domain String?  @unique @db.VarChar(255)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  // Relations
+  studio_users             studio_users[]
+  studio_branding          studio_branding?
+  customers                customers[]
+  storage_providers        storage_providers[]
+  cameras                  cameras[]
+  events                   events[]
+  event_task_templates     event_task_templates[]
+  folders                  folders[]
+  albums                   albums[]
+  assets                   assets[]
+  tags                     tags[]
+  studio_billing_profile   studio_billing_profile?
+  storage_usage_snapshots  storage_usage_snapshots[]
+  invoices                 invoices[]
+  billing_adjustments      billing_adjustments[]
+  audit_logs               audit_logs[]
+
+  @@map("studios")
+}
+
+model users {
+  id             String   @id @default(uuid()) @db.Uuid
+  email          String   @unique @db.VarChar(255)
+  password_hash  String   @db.VarChar(255)
+  full_name      String   @db.VarChar(255)
+  phone          String?  @db.VarChar(50)
+  is_super_admin Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  // Relations
+  studio_users         studio_users[]
+  customers            customers[]
+  created_events       events[]               @relation("EventCreatedBy")
+  status_changes       event_status_history[] @relation("StatusChangedBy")
+  assigned_tasks       event_tasks[]          @relation("TaskAssignee")
+  billing_adjustments  billing_adjustments[]  @relation("AdjustedBy")
+  audit_logs           audit_logs[]
+
+  @@map("users")
+}
+
+model studio_users {
+  id         String      @id @default(uuid()) @db.Uuid
+  studio_id  String      @db.Uuid
+  user_id    String      @db.Uuid
+  role       studio_role @default(staff)
+  created_at DateTime    @default(now()) @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([studio_id, user_id])
+  @@map("studio_users")
+}
+
+model studio_branding {
+  id              String   @id @default(uuid()) @db.Uuid
+  studio_id       String   @unique @db.Uuid
+  brand_name      String?  @db.VarChar(255)
+  logo_url        String?  @db.Text
+  primary_color   String?  @default("#3B82F6") @db.VarChar(20)
+  secondary_color String?  @default("#1E293B") @db.VarChar(20)
+  accent_color    String?  @default("#10B981") @db.VarChar(20)
+  custom_css      String?  @db.Text
+  created_at      DateTime @default(now()) @db.Timestamptz
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@map("studio_branding")
+}
+
+model customers {
+  id         String   @id @default(uuid()) @db.Uuid
+  studio_id  String   @db.Uuid
+  user_id    String   @db.Uuid
+  address    String?  @db.Text
+  notes      String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  studio          studios           @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  user            users             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  event_customers event_customers[]
+  album_customers album_customers[]
+
+  @@unique([studio_id, user_id])
+  @@map("customers")
+}
+
+// ==============================================================================
+// 2. Storage & File Gateway (SFTPGo / Immich)
+// ==============================================================================
+
+model storage_providers {
+  id            String                @id @default(uuid()) @db.Uuid
+  studio_id     String                @db.Uuid
+  name          String                @db.VarChar(255)
+  provider_type storage_provider_type @default(platform)
+  backend       storage_backend       @default(local)
+  is_default    Boolean               @default(false)
+  created_at    DateTime              @default(now()) @db.Timestamptz
+
+  studio                  studios                   @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  storage_credentials     storage_credentials?
+  assets                  assets[]
+  storage_usage_snapshots storage_usage_snapshots[]
+
+  @@map("storage_providers")
+}
+
+model storage_credentials {
+  id                  String   @id @default(uuid()) @db.Uuid
+  storage_provider_id String   @unique @db.Uuid
+  encrypted_config    String   @db.Text
+  created_at          DateTime @default(now()) @db.Timestamptz
+
+  storage_provider storage_providers @relation(fields: [storage_provider_id], references: [id], onDelete: Cascade)
+
+  @@map("storage_credentials")
+}
+
+model cameras {
+  id                   String    @id @default(uuid()) @db.Uuid
+  studio_id            String    @db.Uuid
+  name                 String    @db.VarChar(255)
+  model                String?   @db.VarChar(255)
+  sftpgo_username      String    @unique @db.VarChar(100)
+  sftpgo_password_hash String    @db.VarChar(255)
+  is_active            Boolean   @default(true)
+  last_sync_at         DateTime? @db.Timestamptz
+  created_at           DateTime  @default(now()) @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@map("cameras")
+}
+
+// ==============================================================================
+// 3. Event & Shoot Workflow Engine
+// ==============================================================================
+
+model events {
+  id                String       @id @default(uuid()) @db.Uuid
+  studio_id         String       @db.Uuid
+  title             String       @db.VarChar(255)
+  event_type        String       @db.VarChar(100)
+  status            event_status @default(lead)
+  source            String       @default("manual") @db.VarChar(50)
+  event_date_start  DateTime?    @db.Timestamptz
+  event_date_end    DateTime?    @db.Timestamptz
+  location          String?      @db.VarChar(255)
+  delivery_deadline DateTime?    @db.Timestamptz
+  notes             String?      @db.Text
+  created_by        String?      @db.Uuid
+  created_at        DateTime     @default(now()) @db.Timestamptz
+  updated_at        DateTime     @default(now()) @updatedAt @db.Timestamptz
+
+  studio               studios                @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  user_created_by      users?                 @relation("EventCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
+  event_status_history event_status_history[]
+  event_customers      event_customers[]
+  event_tasks          event_tasks[]
+  albums               albums[]
+  event_tags           event_tags[]
+
+  @@map("events")
+}
+
+model event_status_history {
+  id          String        @id @default(uuid()) @db.Uuid
+  event_id    String        @db.Uuid
+  from_status event_status?
+  to_status   event_status
+  changed_by  String?       @db.Uuid
+  note        String?       @db.Text
+  created_at  DateTime      @default(now()) @db.Timestamptz
+
+  event        events @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user_changed users? @relation("StatusChangedBy", fields: [changed_by], references: [id], onDelete: SetNull)
+
+  @@map("event_status_history")
+}
+
+model event_customers {
+  id          String @id @default(uuid()) @db.Uuid
+  event_id    String @db.Uuid
+  customer_id String @db.Uuid
+
+  event    events    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  customer customers @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, customer_id])
+  @@map("event_customers")
+}
+
+model event_task_templates {
+  id         String   @id @default(uuid()) @db.Uuid
+  studio_id  String   @db.Uuid
+  event_type String   @db.VarChar(100)
+  title      String   @db.VarChar(255)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@map("event_task_templates")
+}
+
+// ==============================================================================
+// 4. Studio-Custom Folders & Tag Tree
+// ==============================================================================
+
+model folders {
+  id               String   @id @default(uuid()) @db.Uuid
+  studio_id        String   @db.Uuid
+  parent_folder_id String?  @db.Uuid
+  name             String   @db.VarChar(255)
+  sort_order       Int      @default(0)
+  icon             String?  @db.VarChar(50)
+  color            String?  @db.VarChar(20)
+  naming_template  String?  @db.VarChar(255)
+  created_at       DateTime @default(now()) @db.Timestamptz
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  studio        studios        @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  parent_folder folders?       @relation("FolderHierarchy", fields: [parent_folder_id], references: [id], onDelete: Cascade)
+  sub_folders   folders[]      @relation("FolderHierarchy")
+  folder_items  folder_items[]
+  event_tasks   event_tasks[]
+
+  @@map("folders")
+}
+
+model event_tasks {
+  id               String    @id @default(uuid()) @db.Uuid
+  event_id         String    @db.Uuid
+  title            String    @db.VarChar(255)
+  assignee_id      String?   @db.Uuid
+  due_date         DateTime? @db.Timestamptz
+  is_done          Boolean   @default(false)
+  linked_folder_id String?   @db.Uuid
+  created_at       DateTime  @default(now()) @db.Timestamptz
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  event         events   @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user_assignee users?   @relation("TaskAssignee", fields: [assignee_id], references: [id], onDelete: SetNull)
+  folder        folders? @relation(fields: [linked_folder_id], references: [id], onDelete: SetNull)
+
+  @@map("event_tasks")
+}
+
+model folder_items {
+  id         String           @id @default(uuid()) @db.Uuid
+  folder_id  String           @db.Uuid
+  item_type  folder_item_type
+  item_id    String           @db.Uuid
+  sort_order Int              @default(0)
+  created_at DateTime         @default(now()) @db.Timestamptz
+
+  folder folders @relation(fields: [folder_id], references: [id], onDelete: Cascade)
+
+  @@unique([folder_id, item_type, item_id])
+  @@map("folder_items")
+}
+
+model albums {
+  id             String   @id @default(uuid()) @db.Uuid
+  studio_id      String   @db.Uuid
+  event_id       String?  @db.Uuid
+  title          String   @db.VarChar(255)
+  description    String?  @db.Text
+  cover_asset_id String?  @db.Uuid
+  is_published   Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  studio          studios           @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  event           events?           @relation(fields: [event_id], references: [id], onDelete: SetNull)
+  album_assets    album_assets[]
+  album_customers album_customers[]
+
+  @@map("albums")
+}
+
+model assets {
+  id                  String    @id @default(uuid()) @db.Uuid
+  studio_id           String    @db.Uuid
+  storage_provider_id String?   @db.Uuid
+  immich_asset_id     String?   @db.VarChar(255)
+  filename            String    @db.VarChar(255)
+  original_path       String    @db.Text
+  mime_type           String?   @db.VarChar(100)
+  file_size_bytes     BigInt    @default(0)
+  width               Int?
+  height              Int?
+  exif_data           Json?     @default("{}")
+  is_soft_deleted     Boolean   @default(false)
+  deleted_at          DateTime? @db.Timestamptz
+  created_at          DateTime  @default(now()) @db.Timestamptz
+
+  studio           studios            @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  storage_provider storage_providers? @relation(fields: [storage_provider_id], references: [id], onDelete: SetNull)
+  album_assets     album_assets[]
+  asset_tags       asset_tags[]
+
+  @@map("assets")
+}
+
+model album_assets {
+  id          String  @id @default(uuid()) @db.Uuid
+  album_id    String  @db.Uuid
+  asset_id    String  @db.Uuid
+  sort_order  Int     @default(0)
+  is_favorite Boolean @default(false)
+
+  album albums @relation(fields: [album_id], references: [id], onDelete: Cascade)
+  asset assets @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@unique([album_id, asset_id])
+  @@map("album_assets")
+}
+
+model album_customers {
+  id           String   @id @default(uuid()) @db.Uuid
+  album_id     String   @db.Uuid
+  customer_id  String   @db.Uuid
+  can_download Boolean  @default(true)
+  can_favorite Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz
+
+  album    albums    @relation(fields: [album_id], references: [id], onDelete: Cascade)
+  customer customers @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@unique([album_id, customer_id])
+  @@map("album_customers")
+}
+
+model tags {
+  id         String   @id @default(uuid()) @db.Uuid
+  studio_id  String   @db.Uuid
+  label      String   @db.VarChar(100)
+  color      String?  @default("#6B7280") @db.VarChar(20)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  studio     studios      @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  event_tags event_tags[]
+  asset_tags asset_tags[]
+
+  @@unique([studio_id, label])
+  @@map("tags")
+}
+
+model event_tags {
+  id         String     @id @default(uuid()) @db.Uuid
+  tag_id     String     @db.Uuid
+  event_id   String     @db.Uuid
+  source     tag_source @default(manual)
+
+  tag   tags   @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+  event events @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  @@unique([tag_id, event_id])
+  @@map("event_tags")
+}
+
+model asset_tags {
+  id         String     @id @default(uuid()) @db.Uuid
+  tag_id     String     @db.Uuid
+  asset_id   String     @db.Uuid
+  source     tag_source @default(manual)
+
+  tag   tags   @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+  asset assets @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@unique([tag_id, asset_id])
+  @@map("asset_tags")
+}
+
+// ==============================================================================
+// 5. Billing & Storage Metering
+// ==============================================================================
+
+model billing_plans {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(100)
+  storage_gb_min  Decimal  @default(0) @db.Decimal(10, 2)
+  storage_gb_max  Decimal? @db.Decimal(10, 2)
+  price_per_month Decimal  @default(0) @db.Decimal(10, 2)
+  currency        String   @default("INR") @db.VarChar(10)
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamptz
+
+  studio_billing_profiles studio_billing_profile[]
+
+  @@map("billing_plans")
+}
+
+model studio_billing_profile {
+  id                      String                @id @default(uuid()) @db.Uuid
+  studio_id               String                @unique @db.Uuid
+  platform_access_fee     Decimal               @default(0) @db.Decimal(10, 2)
+  platform_access_paid_at DateTime?             @db.Timestamptz
+  storage_quota_gb        Decimal               @default(50.0) @db.Decimal(10, 2)
+  billing_plan_id         String?               @db.Uuid
+  custom_price_per_month  Decimal?              @db.Decimal(10, 2)
+  billing_status          studio_billing_status @default(active)
+  created_at              DateTime              @default(now()) @db.Timestamptz
+  updated_at              DateTime              @default(now()) @updatedAt @db.Timestamptz
+
+  studio       studios        @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  billing_plan billing_plans? @relation(fields: [billing_plan_id], references: [id], onDelete: SetNull)
+
+  @@map("studio_billing_profile")
+}
+
+model storage_usage_snapshots {
+  id                  String   @id @default(uuid()) @db.Uuid
+  studio_id           String   @db.Uuid
+  storage_provider_id String   @db.Uuid
+  bytes_used          BigInt   @default(0)
+  snapshot_date       DateTime @default(now()) @db.Date
+  created_at          DateTime @default(now()) @db.Timestamptz
+
+  studio           studios           @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  storage_provider storage_providers @relation(fields: [storage_provider_id], references: [id], onDelete: Cascade)
+
+  @@unique([storage_provider_id, snapshot_date])
+  @@map("storage_usage_snapshots")
+}
+
+model invoices {
+  id           String         @id @default(uuid()) @db.Uuid
+  studio_id    String         @db.Uuid
+  period_start DateTime       @db.Date
+  period_end   DateTime       @db.Date
+  line_items   Json           @default("[]")
+  total_amount Decimal        @default(0) @db.Decimal(10, 2)
+  currency     String         @default("INR") @db.VarChar(10)
+  status       invoice_status @default(draft)
+  issued_at    DateTime?      @db.Timestamptz
+  paid_at      DateTime?      @db.Timestamptz
+  created_at   DateTime       @default(now()) @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model billing_adjustments {
+  id          String   @id @default(uuid()) @db.Uuid
+  studio_id   String   @db.Uuid
+  adjusted_by String?  @db.Uuid
+  amount      Decimal  @db.Decimal(10, 2)
+  reason      String   @db.Text
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  studio        studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  user_adjusted users?  @relation("AdjustedBy", fields: [adjusted_by], references: [id], onDelete: SetNull)
+
+  @@map("billing_adjustments")
+}
+
+// ==============================================================================
+// 6. Audit Logs
+// ==============================================================================
+
+model audit_logs {
+  id            String   @id @default(uuid()) @db.Uuid
+  studio_id     String?  @db.Uuid
+  user_id       String?  @db.Uuid
+  action        String   @db.VarChar(100)
+  resource_type String   @db.VarChar(100)
+  resource_id   String?  @db.VarChar(255)
+  details       Json?    @default("{}")
+  ip_address    String?  @db.VarChar(50)
+  user_agent    String?  @db.Text
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  studio studios? @relation(fields: [studio_id], references: [id], onDelete: SetNull)
+  user   users?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}

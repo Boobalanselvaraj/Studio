@@ -1,54 +1,78 @@
-const BaseRepository = require('./base.repository');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 class StudioRepository {
   async findById(id) {
-    const result = await db.query('SELECT * FROM studios WHERE id = $1', [id]);
-    return result.rows[0] || null;
+    return prisma.studios.findUnique({
+      where: { id },
+      include: {
+        studio_branding: true,
+      },
+    });
   }
 
   async findBySlug(slug) {
-    const result = await db.query('SELECT * FROM studios WHERE slug = $1', [slug]);
-    return result.rows[0] || null;
+    return prisma.studios.findUnique({
+      where: { slug },
+      include: {
+        studio_branding: true,
+      },
+    });
   }
 
   async findAll() {
-    const result = await db.query('SELECT * FROM studios ORDER BY created_at DESC');
-    return result.rows;
+    return prisma.studios.findMany({
+      orderBy: { created_at: 'desc' },
+      include: {
+        studio_branding: true,
+        studio_billing_profile: {
+          include: {
+            billing_plan: true,
+          },
+        },
+      },
+    });
   }
 
   async create({ name, slug, subdomain, custom_domain }) {
-    const result = await db.query(
-      `INSERT INTO studios (name, slug, subdomain, custom_domain)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [name, slug, subdomain, custom_domain]
-    );
-    return result.rows[0];
+    return prisma.studios.create({
+      data: {
+        name,
+        slug,
+        subdomain,
+        custom_domain,
+      },
+    });
   }
 
-  async getBranding(studioId) {
-    const result = await db.query('SELECT * FROM studio_branding WHERE studio_id = $1', [studioId]);
-    return result.rows[0] || null;
+  async getBranding(studio_id) {
+    return prisma.studio_branding.findUnique({
+      where: { studio_id },
+    });
   }
 
-  async updateBranding(studioId, data) {
+  async updateBranding(studio_id, data) {
     const { brand_name, logo_url, primary_color, secondary_color, accent_color, custom_css } = data;
-    const result = await db.query(
-      `INSERT INTO studio_branding (studio_id, brand_name, logo_url, primary_color, secondary_color, accent_color, custom_css)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (studio_id) DO UPDATE SET
-         brand_name = EXCLUDED.brand_name,
-         logo_url = EXCLUDED.logo_url,
-         primary_color = EXCLUDED.primary_color,
-         secondary_color = EXCLUDED.secondary_color,
-         accent_color = EXCLUDED.accent_color,
-         custom_css = EXCLUDED.custom_css,
-         updated_at = NOW()
-       RETURNING *`,
-      [studioId, brand_name, logo_url, primary_color, secondary_color, accent_color, custom_css]
-    );
-    return result.rows[0];
+    return prisma.studio_branding.upsert({
+      where: { studio_id },
+      create: {
+        studio_id,
+        brand_name,
+        logo_url,
+        primary_color,
+        secondary_color,
+        accent_color,
+        custom_css,
+      },
+      update: {
+        brand_name,
+        logo_url,
+        primary_color,
+        secondary_color,
+        accent_color,
+        custom_css,
+        updated_at: new Date(),
+      },
+    });
   }
 }
 

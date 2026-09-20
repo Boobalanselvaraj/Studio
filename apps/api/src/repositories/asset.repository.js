@@ -1,62 +1,77 @@
 const BaseRepository = require('./base.repository');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 class AssetRepository extends BaseRepository {
   constructor() {
     super('assets');
   }
 
-  async findByAlbum(studioId, albumId) {
-    const query = `
-      SELECT a.*, aa.sort_order, aa.is_favorite
-      FROM assets a
-      JOIN album_assets aa ON aa.asset_id = a.id
-      WHERE a.studio_id = $1 AND aa.album_id = $2 AND a.is_soft_deleted = false
-      ORDER BY aa.sort_order ASC, a.created_at ASC
-    `;
-    const result = await db.query(query, [studioId, albumId]);
-    return result.rows;
+  async findByAlbum(studio_id, album_id) {
+    const albumAssets = await prisma.album_assets.findMany({
+      where: {
+        album_id,
+        album: {
+          studio_id,
+        },
+        asset: {
+          is_soft_deleted: false,
+        },
+      },
+      include: {
+        asset: true,
+      },
+      orderBy: {
+        sort_order: 'asc',
+      },
+    });
+
+    return albumAssets.map((aa) => ({
+      ...aa.asset,
+      sort_order: aa.sort_order,
+      is_favorite: aa.is_favorite,
+    }));
   }
 
-  async create(studioId, assetData) {
+  async create(studio_id, assetData) {
     const {
       storage_provider_id,
       immich_asset_id,
       filename,
       original_path,
       mime_type,
-      file_size_bytes,
+      file_size_bytes = 0,
       width,
       height,
-      exif_data = {}
+      exif_data = {},
     } = assetData;
 
-    const result = await db.query(
-      `INSERT INTO assets (
-        studio_id, storage_provider_id, immich_asset_id, 
-        filename, original_path, mime_type, file_size_bytes, 
-        width, height, exif_data
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
-      [
-        studioId, storage_provider_id, immich_asset_id,
-        filename, original_path, mime_type, file_size_bytes,
-        width, height, JSON.stringify(exif_data)
-      ]
-    );
-
-    return result.rows[0];
+    return prisma.assets.create({
+      data: {
+        studio_id,
+        storage_provider_id,
+        immich_asset_id,
+        filename,
+        original_path,
+        mime_type,
+        file_size_bytes: BigInt(file_size_bytes),
+        width,
+        height,
+        exif_data,
+      },
+    });
   }
 
-  async softDelete(studioId, assetId) {
-    const result = await db.query(
-      `UPDATE assets 
-       SET is_soft_deleted = true, deleted_at = NOW() 
-       WHERE studio_id = $1 AND id = $2 
-       RETURNING *`,
-      [studioId, assetId]
-    );
-    return result.rows[0];
+  async softDelete(studio_id, asset_id) {
+    return prisma.assets.updateMany({
+      where: {
+        id: asset_id,
+        studio_id,
+      },
+      data: {
+        is_soft_deleted: true,
+        deleted_at: new Date(),
+      },
+    });
   }
 }
 

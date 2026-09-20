@@ -1,49 +1,65 @@
 const BaseRepository = require('./base.repository');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 class EventRepository extends BaseRepository {
   constructor() {
     super('events');
   }
 
-  async findFiltered(studioId, filters = {}) {
-    let query = `
-      SELECT e.*, 
-        COUNT(DISTINCT et.id) as total_tasks,
-        COUNT(DISTINCT CASE WHEN et.is_done THEN et.id END) as completed_tasks
-      FROM events e
-      LEFT JOIN event_tasks et ON et.event_id = e.id
-      WHERE e.studio_id = $1
-    `;
-    const params = [studioId];
+  async findFiltered(studio_id, filters = {}) {
+    const where = { studio_id };
 
     if (filters.status) {
-      params.push(filters.status);
-      query += ` AND e.status = $${params.length}`;
+      where.status = filters.status;
     }
-
     if (filters.eventType) {
-      params.push(filters.eventType);
-      query += ` AND e.event_type = $${params.length}`;
+      where.event_type = filters.eventType;
+    }
+    if (filters.fromDate || filters.toDate) {
+      where.event_date_start = {};
+      if (filters.fromDate) where.event_date_start.gte = new Date(filters.fromDate);
+      if (filters.toDate) where.event_date_start.lte = new Date(filters.toDate);
     }
 
-    if (filters.fromDate) {
-      params.push(filters.fromDate);
-      query += ` AND e.event_date_start >= $${params.length}`;
-    }
+    const events = await prisma.events.findMany({
+      where,
+      include: {
+        event_tasks: {
+          select: {
+            id: true,
+            is_done: true,
+          },
+        },
+        event_customers: {
+          include: {
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    full_name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { event_date_start: 'asc' },
+        { created_at: 'desc' },
+      ],
+    });
 
-    if (filters.toDate) {
-      params.push(filters.toDate);
-      query += ` AND e.event_date_start <= $${params.length}`;
-    }
-
-    query += ` GROUP BY e.id ORDER BY e.event_date_start ASC NULLS LAST, e.created_at DESC`;
-
-    const result = await db.query(query, params);
-    return result.rows;
+    return events.map((e) => ({
+      ...e,
+      total_tasks: e.event_tasks.length,
+      completed_tasks: e.event_tasks.filter((t) => t.is_done).length,
+    }));
   }
 
-  async create(studioId, eventData) {
+  async create(studio_id, eventData) {
     const {
       title,
       event_type,
@@ -54,77 +70,78 @@ class EventRepository extends BaseRepository {
       location,
       delivery_deadline,
       notes,
-      created_by
+      created_by,
     } = eventData;
 
-    const result = await db.query(
-      `INSERT INTO events (
-        studio_id, title, event_type, status, source, 
-        event_date_start, event_date_end, location, 
-        delivery_deadline, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING *`,
-      [
-        studioId, title, event_type, status, source,
-        event_date_start, event_date_end, location,
-        delivery_deadline, notes, created_by
-      ]
-    );
-
-    return result.rows[0];
+    return prisma.events.create({
+      data: {
+        studio_id,
+        title,
+        event_type,
+        status,
+        source,
+        event_date_start: event_date_start ? new Date(event_date_start) : null,
+        event_date_end: event_date_end ? new Date(event_date_end) : null,
+        location,
+        delivery_deadline: delivery_deadline ? new Date(delivery_deadline) : null,
+        notes,
+        created_by,
+      },
+    });
   }
 
-  async updateStatus(studioId, eventId, toStatus, changedBy, note = '') {
-    const client = await db.getClient();
-    try {
-      await client.query('BEGIN');
+  async updateStatus(studio_id, event_id, to_status, changed_by, note = '') {
+    return prisma.$transaction(async (tx) => {
+      const current = await tx.events.findFirst({
+        where: { id: event_id, studio_id },
+      });
 
-      const current = await client.query(
-        'SELECT status FROM events WHERE studio_id = $1 AND id = $2 FOR UPDATE',
-        [studioId, eventId]
-      );
-
-      if (current.rows.length === 0) {
+      if (!current) {
         throw new Error('Event not found');
       }
 
-      const fromStatus = current.rows[0].status;
+      const updated = await tx.events.update({
+        where: { id: event_id },
+        data: {
+          status: to_status,
+          updated_at: new Date(),
+        },
+      });
 
-      const updated = await client.query(
-        `UPDATE events 
-         SET status = $1, updated_at = NOW() 
-         WHERE studio_id = $2 AND id = $3 
-         RETURNING *`,
-        [toStatus, studioId, eventId]
-      );
+      await tx.event_status_history.create({
+        data: {
+          event_id,
+          from_status: current.status,
+          to_status,
+          changed_by,
+          note,
+        },
+      });
 
-      await client.query(
-        `INSERT INTO event_status_history (event_id, from_status, to_status, changed_by, note)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [eventId, fromStatus, toStatus, changedBy, note]
-      );
-
-      await client.query('COMMIT');
-      return updated.rows[0];
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return updated;
+    });
   }
 
-  async getHistory(studioId, eventId) {
-    const result = await db.query(
-      `SELECT h.*, u.full_name as changed_by_name
-       FROM event_status_history h
-       JOIN events e ON e.id = h.event_id
-       LEFT JOIN users u ON u.id = h.changed_by
-       WHERE e.studio_id = $1 AND e.id = $2
-       ORDER BY h.created_at DESC`,
-      [studioId, eventId]
-    );
-    return result.rows;
+  async getHistory(studio_id, event_id) {
+    return prisma.event_status_history.findMany({
+      where: {
+        event_id,
+        event: {
+          studio_id,
+        },
+      },
+      include: {
+        user_changed: {
+          select: {
+            id: true,
+            full_name: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
   }
 }
 

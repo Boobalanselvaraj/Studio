@@ -1,30 +1,44 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 class BaseRepository {
-  constructor(tableName) {
-    this.tableName = tableName;
-    this.db = db;
+  constructor(modelName) {
+    this.modelName = modelName;
+    this.prisma = prisma;
   }
 
-  // Tenant-enforced find by ID
-  async findById(studioId, id) {
-    const query = `SELECT * FROM ${this.tableName} WHERE studio_id = $1 AND id = $2`;
-    const result = await this.db.query(query, [studioId, id]);
-    return result.rows[0] || null;
+  get model() {
+    return this.prisma[this.modelName];
   }
 
-  // Tenant-enforced list
-  async findAll(studioId, limit = 50, offset = 0) {
-    const query = `SELECT * FROM ${this.tableName} WHERE studio_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
-    const result = await this.db.query(query, [studioId, limit, offset]);
-    return result.rows;
+  async findById(studio_id, id) {
+    return this.model.findFirst({
+      where: {
+        id,
+        studio_id,
+      },
+    });
   }
 
-  // Tenant-enforced delete
-  async deleteById(studioId, id) {
-    const query = `DELETE FROM ${this.tableName} WHERE studio_id = $1 AND id = $2 RETURNING *`;
-    const result = await this.db.query(query, [studioId, id]);
-    return result.rows[0] || null;
+  async findAll(studio_id, limit = 50, offset = 0) {
+    return this.model.findMany({
+      where: {
+        studio_id,
+      },
+      take: limit,
+      skip: offset,
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+  }
+
+  async deleteById(studio_id, id) {
+    return this.model.deleteMany({
+      where: {
+        id,
+        studio_id,
+      },
+    });
   }
 }
 

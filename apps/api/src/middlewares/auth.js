@@ -1,14 +1,17 @@
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 async function authenticate(req, res, next) {
   try {
     // 1. Check session cookie
     if (req.session && req.session.userId) {
-      const userRes = await db.query('SELECT id, email, full_name, is_super_admin FROM users WHERE id = $1', [req.session.userId]);
-      if (userRes.rows.length > 0) {
-        req.user = userRes.rows[0];
+      const user = await prisma.users.findUnique({
+        where: { id: req.session.userId },
+        select: { id: true, email: true, full_name: true, is_super_admin: true },
+      });
+      if (user) {
+        req.user = user;
         return next();
       }
     }
@@ -19,9 +22,12 @@ async function authenticate(req, res, next) {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, env.JWT_SECRET);
       
-      const userRes = await db.query('SELECT id, email, full_name, is_super_admin FROM users WHERE id = $1', [decoded.userId]);
-      if (userRes.rows.length > 0) {
-        req.user = userRes.rows[0];
+      const user = await prisma.users.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, full_name: true, is_super_admin: true },
+      });
+      if (user) {
+        req.user = user;
         return next();
       }
     }
@@ -33,5 +39,5 @@ async function authenticate(req, res, next) {
 }
 
 module.exports = {
-  authenticate
+  authenticate,
 };

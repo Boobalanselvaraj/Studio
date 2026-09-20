@@ -1,18 +1,32 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 class TaskController {
   async getEventTasks(req, res, next) {
     try {
-      const result = await db.query(
-        `SELECT et.*, u.full_name as assignee_name 
-         FROM event_tasks et
-         JOIN events e ON e.id = et.event_id
-         LEFT JOIN users u ON u.id = et.assignee_id
-         WHERE e.studio_id = $1 AND et.event_id = $2
-         ORDER BY et.created_at ASC`,
-        [req.studioId, req.params.eventId]
+      const tasks = await prisma.event_tasks.findMany({
+        where: {
+          event_id: req.params.eventId,
+          event: {
+            studio_id: req.studioId,
+          },
+        },
+        include: {
+          user_assignee: {
+            select: {
+              id: true,
+              full_name: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'asc' },
+      });
+
+      res.json(
+        tasks.map((t) => ({
+          ...t,
+          assignee_name: t.user_assignee?.full_name || null,
+        }))
       );
-      res.json(result.rows);
     } catch (err) {
       next(err);
     }
@@ -21,13 +35,16 @@ class TaskController {
   async createTask(req, res, next) {
     try {
       const { title, assignee_id, due_date, linked_folder_id } = req.body;
-      const result = await db.query(
-        `INSERT INTO event_tasks (event_id, title, assignee_id, due_date, linked_folder_id)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING *`,
-        [req.params.eventId, title, assignee_id || null, due_date || null, linked_folder_id || null]
-      );
-      res.status(201).json(result.rows[0]);
+      const task = await prisma.event_tasks.create({
+        data: {
+          event_id: req.params.eventId,
+          title,
+          assignee_id: assignee_id || null,
+          due_date: due_date ? new Date(due_date) : null,
+          linked_folder_id: linked_folder_id || null,
+        },
+      });
+      res.status(201).json(task);
     } catch (err) {
       next(err);
     }
@@ -36,18 +53,17 @@ class TaskController {
   async updateTask(req, res, next) {
     try {
       const { is_done, assignee_id, due_date, title } = req.body;
-      const result = await db.query(
-        `UPDATE event_tasks
-         SET is_done = COALESCE($1, is_done),
-             assignee_id = COALESCE($2, assignee_id),
-             due_date = COALESCE($3, due_date),
-             title = COALESCE($4, title),
-             updated_at = NOW()
-         WHERE id = $5
-         RETURNING *`,
-        [is_done, assignee_id, due_date, title, req.params.id]
-      );
-      res.json(result.rows[0]);
+      const task = await prisma.event_tasks.update({
+        where: { id: req.params.id },
+        data: {
+          is_done: is_done !== undefined ? is_done : undefined,
+          assignee_id: assignee_id !== undefined ? assignee_id : undefined,
+          due_date: due_date ? new Date(due_date) : undefined,
+          title: title !== undefined ? title : undefined,
+          updated_at: new Date(),
+        },
+      });
+      res.json(task);
     } catch (err) {
       next(err);
     }

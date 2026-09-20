@@ -1,3 +1,4 @@
+const prisma = require('./prisma');
 const { Pool } = require('pg');
 const env = require('./env');
 
@@ -13,6 +14,7 @@ pool.on('error', (err) => {
 });
 
 module.exports = {
+  prisma,
   query: (text, params) => pool.query(text, params),
   getClient: () => pool.connect(),
   pool,

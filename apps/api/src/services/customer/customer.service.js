@@ -1,35 +1,76 @@
-const db = require('../../config/db');
+const prisma = require('../../config/prisma');
 
 class CustomerService {
-  async getCustomers(studioId) {
-    const query = `
-      SELECT c.*, u.email, u.full_name, u.phone,
-        COUNT(DISTINCT ec.event_id) as total_events,
-        COUNT(DISTINCT ac.album_id) as total_albums
-      FROM customers c
-      JOIN users u ON u.id = c.user_id
-      LEFT JOIN event_customers ec ON ec.customer_id = c.id
-      LEFT JOIN album_customers ac ON ac.customer_id = c.id
-      WHERE c.studio_id = $1
-      GROUP BY c.id, u.id
-      ORDER BY c.created_at DESC
-    `;
-    const result = await db.query(query, [studioId]);
-    return result.rows;
+  async getCustomers(studio_id) {
+    const customers = await prisma.customers.findMany({
+      where: { studio_id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            full_name: true,
+            phone: true,
+          },
+        },
+        event_customers: true,
+        album_customers: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return customers.map((c) => ({
+      id: c.id,
+      studio_id: c.studio_id,
+      user_id: c.user_id,
+      email: c.user.email,
+      full_name: c.user.full_name,
+      phone: c.user.phone,
+      address: c.address,
+      notes: c.notes,
+      total_events: c.event_customers.length,
+      total_albums: c.album_customers.length,
+      created_at: c.created_at,
+    }));
   }
 
-  async getCustomerAlbums(customerId) {
-    const query = `
-      SELECT a.*, s.name as studio_name, sb.brand_name, sb.logo_url, sb.primary_color
-      FROM albums a
-      JOIN album_customers ac ON ac.album_id = a.id
-      JOIN studios s ON s.id = a.studio_id
-      LEFT JOIN studio_branding sb ON sb.studio_id = s.id
-      WHERE ac.customer_id = $1 AND a.is_published = true
-      ORDER BY a.created_at DESC
-    `;
-    const result = await db.query(query, [customerId]);
-    return result.rows;
+  async getCustomerAlbums(user_id) {
+    const customer = await prisma.customers.findFirst({
+      where: { user_id },
+    });
+
+    if (!customer) return [];
+
+    const albumCustomers = await prisma.album_customers.findMany({
+      where: {
+        customer_id: customer.id,
+        album: {
+          is_published: true,
+        },
+      },
+      include: {
+        album: {
+          include: {
+            studio: {
+              include: {
+                studio_branding: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    return albumCustomers.map((ac) => ({
+      ...ac.album,
+      studio_name: ac.album.studio.name,
+      brand_name: ac.album.studio.studio_branding?.brand_name,
+      logo_url: ac.album.studio.studio_branding?.logo_url,
+      primary_color: ac.album.studio.studio_branding?.primary_color,
+    }));
   }
 }
 

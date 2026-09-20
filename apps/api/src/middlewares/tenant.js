@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 async function resolveTenant(req, res, next) {
   try {
@@ -10,9 +10,12 @@ async function resolveTenant(req, res, next) {
     if (studioIdHeader) {
       studioId = studioIdHeader;
     } else if (studioSlug) {
-      const studioRes = await db.query('SELECT id FROM studios WHERE slug = $1 AND is_active = true', [studioSlug]);
-      if (studioRes.rows.length > 0) {
-        studioId = studioRes.rows[0].id;
+      const studio = await prisma.studios.findFirst({
+        where: { slug: studioSlug, is_active: true },
+        select: { id: true },
+      });
+      if (studio) {
+        studioId = studio.id;
       }
     } else if (req.user && req.session && req.session.currentStudioId) {
       studioId = req.session.currentStudioId;
@@ -23,13 +26,17 @@ async function resolveTenant(req, res, next) {
     }
 
     // Verify studio existence and active status
-    const result = await db.query('SELECT id, name, slug, is_active FROM studios WHERE id = $1', [studioId]);
-    if (result.rows.length === 0 || !result.rows[0].is_active) {
+    const studio = await prisma.studios.findUnique({
+      where: { id: studioId },
+      select: { id: true, name: true, slug: true, is_active: true },
+    });
+
+    if (!studio || !studio.is_active) {
       return res.status(404).json({ error: 'Studio not found or inactive' });
     }
 
-    req.studio = result.rows[0];
-    req.studioId = req.studio.id;
+    req.studio = studio;
+    req.studioId = studio.id;
     next();
   } catch (error) {
     next(error);
@@ -37,5 +44,5 @@ async function resolveTenant(req, res, next) {
 }
 
 module.exports = {
-  resolveTenant
+  resolveTenant,
 };
