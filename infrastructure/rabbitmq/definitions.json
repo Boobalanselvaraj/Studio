@@ -1,0 +1,100 @@
+{
+  "rabbit_version": "3.13.0",
+  "users": [
+    {
+      "name": "guest",
+      "password_hash": "guest",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"]
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "guest",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "queues": [
+    {
+      "name": "notifications",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "media-sync",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "event-automation",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "billing-metering",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "studio.direct",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "studio.direct",
+      "vhost": "/",
+      "destination": "notifications",
+      "destination_type": "queue",
+      "routing_key": "notification",
+      "arguments": {}
+    },
+    {
+      "source": "studio.direct",
+      "vhost": "/",
+      "destination": "media-sync",
+      "destination_type": "queue",
+      "routing_key": "media.sync",
+      "arguments": {}
+    },
+    {
+      "source": "studio.direct",
+      "vhost": "/",
+      "destination": "event-automation",
+      "destination_type": "queue",
+      "routing_key": "event.automation",
+      "arguments": {}
+    },
+    {
+      "source": "studio.direct",
+      "vhost": "/",
+      "destination": "billing-metering",
+      "destination_type": "queue",
+      "routing_key": "billing.metering",
+      "arguments": {}
+    }
+  ]
+}

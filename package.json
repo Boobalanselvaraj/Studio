@@ -1,0 +1,32 @@
+{
+  "name": "photo-studio-saas-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Tenant Photo Studio SaaS Platform with Event Management, Custom Folders, and Self-Hosted Media Engine",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace=apps/api run dev",
+    "dev:web": "npm --workspace=apps/web run dev",
+    "build:api": "npm --workspace=apps/api run build",
+    "build:web": "npm --workspace=apps/web run build",
+    "compose:up": "docker compose up -d",
+    "compose:down": "docker compose down",
+    "compose:logs": "docker compose logs -f",
+    "compose:data": "docker compose -f compose/data.yml up -d",
+    "compose:media": "docker compose -f compose/media.yml up -d",
+    "compose:app": "docker compose -f compose/app.yml up -d"
+  },
+  "keywords": [
+    "photo-studio",
+    "saas",
+    "photography",
+    "multi-tenant",
+    "event-management",
+    "immich",
+    "sftpgo"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}

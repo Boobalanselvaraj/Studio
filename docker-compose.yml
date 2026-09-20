@@ -1,0 +1,6 @@
+name: photo-studio-platform
+
+include:
+  - compose/data.yml
+  - compose/media.yml
+  - compose/app.yml

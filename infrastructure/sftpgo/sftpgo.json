@@ -1,0 +1,28 @@
+{
+  "common": {
+    "idle_timeout": 15,
+    "upload_mode": 0
+  },
+  "sftpd": {
+    "bindings": [
+      {
+        "port": 2022,
+        "address": "0.0.0.0",
+        "force_passive_ip": ""
+      }
+    ],
+    "max_auth_tries": 3
+  },
+  "httpd": {
+    "bindings": [
+      {
+        "port": 8080,
+        "address": "0.0.0.0"
+      }
+    ]
+  },
+  "data_provider": {
+    "driver": "sqlite",
+    "name": "/var/lib/sftpgo/sftpgo.db"
+  }
+}
