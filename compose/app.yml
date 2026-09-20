@@ -62,6 +62,4 @@ services:
     networks:
       - studio_internal_network
 
-networks:
-  studio_internal_network:
-    external: true
+

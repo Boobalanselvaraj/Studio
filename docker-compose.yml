@@ -4,3 +4,9 @@ include:
   - compose/data.yml
   - compose/media.yml
   - compose/app.yml
+
+networks:
+  studio_internal_network:
+    name: studio_internal_network
+    driver: bridge
+

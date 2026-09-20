@@ -60,6 +60,4 @@ volumes:
   piwigo_config:
   piwigo_gallery:
 
-networks:
-  studio_internal_network:
-    external: true
+

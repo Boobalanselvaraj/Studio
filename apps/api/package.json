@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "dev": "prisma generate --schema=prisma/schema.prisma && nodemon src/server.js",
     "test": "jest",
     "lint": "eslint src/",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",

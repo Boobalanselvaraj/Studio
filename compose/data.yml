@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: studio_postgres
     restart: unless-stopped
     environment:
@@ -11,6 +11,7 @@ services:
       - "${DB_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../infrastructure/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
     networks:
       - studio_internal_network
     healthcheck:
@@ -64,7 +65,4 @@ volumes:
   redis_data:
   rabbitmq_data:
 
-networks:
-  studio_internal_network:
-    name: studio_internal_network
-    driver: bridge
+
