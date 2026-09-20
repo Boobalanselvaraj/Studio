@@ -128,6 +128,37 @@ async function bulkMove(req, res, next) {
   }
 }
 
+async function update(req, res, next) {
+  try {
+    const folderId = req.params.id;
+    const { name, sort_order, icon, color, naming_template } = req.body;
+
+    const folder = await prisma.folders.findFirst({
+      where: { id: folderId, studio_id: req.studioId },
+    });
+
+    if (!folder) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    const updated = await prisma.folders.update({
+      where: { id: folderId },
+      data: {
+        name: name !== undefined ? name : undefined,
+        sort_order: sort_order !== undefined ? sort_order : undefined,
+        icon: icon !== undefined ? icon : undefined,
+        color: color !== undefined ? color : undefined,
+        naming_template: naming_template !== undefined ? naming_template : undefined,
+        updated_at: new Date(),
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteFolder(req, res, next) {
   try {
     const folderId = req.params.id;
@@ -153,6 +184,7 @@ async function deleteFolder(req, res, next) {
 module.exports = {
   getTree,
   create,
+  update,
   move,
   bulkMove,
   delete: deleteFolder,

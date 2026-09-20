@@ -107,9 +107,35 @@ async function tagAsset(req, res, next) {
   }
 }
 
+async function getSuggestedTags(req, res, next) {
+  try {
+    const assetId = req.params.id;
+
+    const asset = await prisma.assets.findFirst({
+      where: { id: assetId },
+      include: {
+        asset_tags: {
+          where: { source: 'suggested' },
+          include: { tag: true },
+        },
+      },
+    });
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    const suggestions = asset.asset_tags.map((at) => at.tag);
+    res.json(suggestions);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
   tagEvent,
   tagAsset,
+  getSuggestedTags,
 };

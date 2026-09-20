@@ -92,9 +92,50 @@ async function deleteTask(req, res, next) {
   }
 }
 
+async function getTaskTemplates(req, res, next) {
+  try {
+    const { event_type } = req.query;
+    const where = { studio_id: req.studioId };
+    if (event_type) where.event_type = event_type;
+
+    const templates = await prisma.event_task_templates.findMany({
+      where,
+      orderBy: { sort_order: 'asc' },
+    });
+    res.json(templates);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createTaskTemplate(req, res, next) {
+  try {
+    const { event_type, title, sort_order = 0 } = req.body;
+
+    if (!event_type || !title) {
+      return res.status(400).json({ error: 'event_type and title are required' });
+    }
+
+    const template = await prisma.event_task_templates.create({
+      data: {
+        studio_id: req.studioId,
+        event_type,
+        title,
+        sort_order,
+      },
+    });
+
+    res.status(201).json(template);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getEventTasks,
   createTask,
   updateTask,
   deleteTask,
+  getTaskTemplates,
+  createTaskTemplate,
 };

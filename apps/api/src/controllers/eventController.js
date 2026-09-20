@@ -250,10 +250,93 @@ async function getHistory(req, res, next) {
   }
 }
 
+async function update(req, res, next) {
+  try {
+    const eventId = req.params.id;
+    const {
+      title,
+      event_type,
+      event_date_start,
+      event_date_end,
+      location,
+      delivery_deadline,
+      notes,
+    } = req.body;
+
+    const existing = await prisma.events.findFirst({
+      where: { id: eventId, studio_id: req.studioId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const updated = await prisma.events.update({
+      where: { id: eventId },
+      data: {
+        title: title !== undefined ? title : undefined,
+        event_type: event_type !== undefined ? event_type : undefined,
+        event_date_start: event_date_start !== undefined ? (event_date_start ? new Date(event_date_start) : null) : undefined,
+        event_date_end: event_date_end !== undefined ? (event_date_end ? new Date(event_date_end) : null) : undefined,
+        location: location !== undefined ? location : undefined,
+        delivery_deadline: delivery_deadline !== undefined ? (delivery_deadline ? new Date(delivery_deadline) : null) : undefined,
+        notes: notes !== undefined ? notes : undefined,
+        updated_at: new Date(),
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getCalendar(req, res, next) {
+  try {
+    const { month, year } = req.query;
+    const currentYear = year ? parseInt(year, 10) : new Date().getFullYear();
+    const currentMonth = month ? parseInt(month, 10) - 1 : new Date().getMonth();
+
+    const startOfMonth = new Date(currentYear, currentMonth, 1);
+    const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+
+    const events = await prisma.events.findMany({
+      where: {
+        studio_id: req.studioId,
+        event_date_start: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        event_type: true,
+        status: true,
+        event_date_start: true,
+        event_date_end: true,
+        location: true,
+      },
+      orderBy: { event_date_start: 'asc' },
+    });
+
+    res.json({
+      year: currentYear,
+      month: currentMonth + 1,
+      totalEvents: events.length,
+      events,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
   getById,
+  update,
   updateStatus,
   getHistory,
+  getCalendar,
 };

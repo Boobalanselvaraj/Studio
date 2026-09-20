@@ -5,13 +5,17 @@ const taskController = require('../controllers/taskController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
 // Events
+router.get('/calendar', eventController.getCalendar);
 router.get('/', eventController.list);
 router.post('/', requireStudioRole(['studio_owner', 'studio_manager']), eventController.create);
 router.get('/:id', eventController.getById);
+router.patch('/:id', requireStudioRole(['studio_owner', 'studio_manager']), eventController.update);
 router.post('/:id/status', eventController.updateStatus);
 router.get('/:id/history', eventController.getHistory);
 
 // Event Tasks
+router.get('/task-templates', taskController.getTaskTemplates);
+router.post('/task-templates', requireStudioRole(['studio_owner', 'studio_manager']), taskController.createTaskTemplate);
 router.get('/:eventId/tasks', taskController.getEventTasks);
 router.post('/:eventId/tasks', taskController.createTask);
 router.patch('/tasks/:id', taskController.updateTask);
