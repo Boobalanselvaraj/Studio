@@ -1,6 +1,94 @@
 const { connectRabbitMQ } = require('../config/rabbitmq');
 const prisma = require('../config/prisma');
 
+async function handleMediaSyncMessage(payload) {
+  if (payload.action === 'index_asset') {
+    return indexAsset(payload);
+  }
+
+  if (payload.action === 'sftp_upload_detected') {
+    return recordSftpUpload(payload);
+  }
+
+  if (payload.action === 'bulk_folder_move') {
+    return { status: 'queued_for_folder_move', itemCount: payload.itemIds?.length || 0 };
+  }
+
+  return { status: 'ignored', action: payload.action };
+}
+
+async function indexAsset(payload) {
+  const assetId = payload.assetId || payload.asset_id;
+
+  if (!assetId || !payload.studioId) {
+    throw new Error('index_asset requires assetId and studioId');
+  }
+
+  const asset = await prisma.assets.findFirst({
+    where: {
+      id: assetId,
+      studio_id: payload.studioId,
+    },
+    select: { id: true },
+  });
+
+  if (!asset) {
+    throw new Error('Asset not found for studio');
+  }
+
+  return prisma.assets.update({
+    where: { id: assetId },
+    data: {
+      immich_asset_id: payload.immichAssetId || payload.immich_asset_id || null,
+    },
+  });
+}
+
+async function recordSftpUpload(payload) {
+  const { studioId, filename, originalPath, mimeType, fileSizeBytes = 0, storageProviderId, cameraUsername } = payload;
+
+  if (!studioId || !filename || !originalPath) {
+    throw new Error('sftp_upload_detected requires studioId, filename, and originalPath');
+  }
+
+  if (storageProviderId) {
+    const provider = await prisma.storage_providers.findFirst({
+      where: {
+        id: storageProviderId,
+        studio_id: studioId,
+      },
+      select: { id: true },
+    });
+
+    if (!provider) {
+      throw new Error('Storage provider not found for studio');
+    }
+  }
+
+  const asset = await prisma.assets.create({
+    data: {
+      studio_id: studioId,
+      storage_provider_id: storageProviderId || null,
+      filename,
+      original_path: originalPath,
+      mime_type: mimeType || null,
+      file_size_bytes: BigInt(fileSizeBytes || 0),
+    },
+  });
+
+  if (cameraUsername) {
+    await prisma.cameras.updateMany({
+      where: {
+        studio_id: studioId,
+        sftpgo_username: cameraUsername,
+      },
+      data: { last_sync_at: new Date() },
+    });
+  }
+
+  return asset;
+}
+
 async function startMediaSyncWorker() {
   const { channel } = await connectRabbitMQ();
   if (!channel) return;
@@ -14,13 +102,7 @@ async function startMediaSyncWorker() {
         const payload = JSON.parse(msg.content.toString());
         console.log('[Media Sync Worker] Processing media event:', payload);
 
-        if (payload.action === 'index_asset' && payload.asset_id) {
-          // Direct asset status update & sync logic
-          await prisma.assets.update({
-            where: { asset_id: payload.asset_id },
-            data: { sync_status: 'SYNCED', indexed_at: new Date() }
-          });
-        }
+        await handleMediaSyncMessage(payload);
 
         channel.ack(msg);
       } catch (err) {
@@ -31,4 +113,7 @@ async function startMediaSyncWorker() {
   });
 }
 
-module.exports = { startMediaSyncWorker };
+module.exports = {
+  handleMediaSyncMessage,
+  startMediaSyncWorker,
+};

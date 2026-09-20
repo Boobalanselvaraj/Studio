@@ -6,6 +6,5 @@ const { authenticate } = require('../middlewares/auth');
 router.use(authenticate);
 
 router.get('/albums', customerController.getMyGalleries);
-router.post('/albums/share', customerController.shareAlbum);
 
 module.exports = router;

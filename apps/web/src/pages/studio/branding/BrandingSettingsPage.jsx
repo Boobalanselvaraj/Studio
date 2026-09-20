@@ -1,78 +1,210 @@
-import React, { useState } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../components/ui/card';
-import { Input } from '../../../components/ui/input';
+import React, { useState, useEffect } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
+import { Aperture, Check, ArrowUpRight, Loader2 } from 'lucide-react';
+import { photos } from '../../../data/workspace';
+import { PageHeading, Photo } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
+import { studioApi } from '../../../api/services';
+import { useAuthStore } from '../../../stores/authStore';
 
 export function BrandingSettingsPage() {
-  const [brandName, setBrandName] = useState('Aurora Fine Art Photography');
-  const [primaryColor, setPrimaryColor] = useState('#2563EB');
+  const currentStudio = useAuthStore((s) => s.currentStudio);
+  const outletContext = useOutletContext();
+
+  const [brandName, setBrandName] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#3B82F6');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadBranding = async () => {
+    try {
+      setLoading(true);
+      const data = await studioApi.getBranding();
+      if (data) {
+        setBrandName(data.brand_name || currentStudio?.name || '');
+        setPrimaryColor(data.primary_color || '#3B82F6');
+        setLogoUrl(data.logo_url || '');
+      }
+    } catch (err) {
+      console.warn('Branding load fallback:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBranding();
+  }, [currentStudio?.id]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setBusy(true);
+      setError('');
+      await studioApi.updateBranding({
+        brand_name: brandName.trim(),
+        primary_color: primaryColor,
+        logo_url: logoUrl || undefined,
+      });
+
+      document.documentElement.style.setProperty('--brand-primary', primaryColor);
+      setSaved(true);
+      outletContext?.refreshLayoutData?.();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save brand preferences');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Branding & White-Labeling</h2>
-        <p className="text-sm text-muted">Customize client-facing galleries, color accents, and logos.</p>
-      </div>
+    <div className="page-enter">
+      <PageHeading
+        eyebrow="MAKE IT UNMISTAKABLY YOURS"
+        title="Your studio, your signature."
+        description="Give your client experience a personal touch."
+      />
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Studio Identity</CardTitle>
-            <CardDescription>Your brand will replace all platform references for your clients</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted">Studio Brand Name</label>
-              <Input
-                value={brandName}
-                onChange={(e) => setBrandName(e.target.value)}
-              />
-            </div>
+      {loading ? (
+        <div className="flex justify-center items-center py-20 text-muted">
+          <Loader2 size={32} className="animate-spin text-brand-primary mr-3" />
+          <span>Loading branding preferences…</span>
+        </div>
+      ) : (
+        <div className="branding-grid">
+          <section className="panel p-7">
+            <h2>Studio identity</h2>
+            <p className="text-xs text-muted mt-2 mb-7">
+              Fine-tune the details that make your brand memorable.
+            </p>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted">Primary Brand Color (Hex)</label>
-              <div className="flex gap-2">
+            <form className="form-stack" onSubmit={handleSubmit}>
+              {error && <p className="form-error">{error}</p>}
+
+              <label>
+                Studio / Brand Name
                 <input
-                  type="color"
-                  value={primaryColor}
-                  onChange={(e) => setPrimaryColor(e.target.value)}
-                  className="h-10 w-12 rounded border border-border cursor-pointer bg-transparent"
+                  required
+                  maxLength={60}
+                  pattern=".*\S.*"
+                  value={brandName}
+                  onChange={(e) => {
+                    setBrandName(e.target.value);
+                    setSaved(false);
+                  }}
+                  placeholder="e.g. Lumina Creative Studios"
                 />
-                <Input
-                  value={primaryColor}
-                  onChange={(e) => setPrimaryColor(e.target.value)}
+              </label>
+
+              <label>
+                Signature Brand Color
+                <div className="brand-color-input">
+                  <input
+                    aria-label="Pick signature color"
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => {
+                      setPrimaryColor(e.target.value);
+                      setSaved(false);
+                    }}
+                  />
+                  <input
+                    aria-label="Hex color code"
+                    required
+                    pattern="#[0-9a-fA-F]{6}"
+                    value={primaryColor}
+                    onChange={(e) => {
+                      setPrimaryColor(e.target.value);
+                      setSaved(false);
+                    }}
+                  />
+                </div>
+              </label>
+
+              <div className="brand-swatches">
+                {['#3B82F6', '#23745d', '#2c5273', '#78627f', '#97634c', '#10B981'].map((c) => (
+                  <button
+                    type="button"
+                    aria-label={`Use ${c} color`}
+                    key={c}
+                    style={{ background: c }}
+                    onClick={() => {
+                      setPrimaryColor(c);
+                      setSaved(false);
+                    }}
+                  >
+                    {primaryColor === c && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
+
+              <label>
+                Logo Image URL (optional)
+                <input
+                  type="url"
+                  placeholder="https://your-domain.com/logo.png"
+                  value={logoUrl}
+                  onChange={(e) => {
+                    setLogoUrl(e.target.value);
+                    setSaved(false);
+                  }}
                 />
+              </label>
+
+              <Button type="submit" disabled={busy}>
+                {busy ? <Loader2 size={16} className="animate-spin" /> : 'Save brand preferences'}
+              </Button>
+
+              {saved && (
+                <p role="status" className="text-xs text-green-600 dark:text-green-400 font-medium">
+                  Saved. Your client galleries and studio interface now use this signature branding.
+                </p>
+              )}
+            </form>
+          </section>
+
+          <section className="panel brand-preview">
+            <div className="brand-preview-label">
+              <span>LIVE CLIENT PREVIEW</span>
+              <Link to="/customer/galleries" className="text-link">
+                Open gallery
+                <ArrowUpRight size={15} />
+              </Link>
+            </div>
+
+            <div
+              className="brand-preview-header"
+              style={{
+                color: /^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : '#3B82F6',
+              }}
+            >
+              {logoUrl ? (
+                <img src={logoUrl} alt={brandName} className="h-6 w-auto object-contain mr-2" />
+              ) : (
+                <Aperture size={24} />
+              )}
+              {brandName || 'Your studio'}
+            </div>
+
+            <div className="brand-preview-photo">
+              <Photo src={photos.wedding} alt="Wedding gallery preview" />
+              <div>
+                <span>A COLLECTION BY {(brandName || 'STUDIO').toUpperCase()}</span>
+                <h2>
+                  The beginning
+                  <br />
+                  of always.
+                </h2>
               </div>
             </div>
 
-            <Button className="mt-2">Save Branding</Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Live Customer Portal Preview</CardTitle>
-            <CardDescription>Simulated view with your brand color applied</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="border border-border rounded-lg p-4 bg-surface-2 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-border">
-                <span className="font-bold text-sm" style={{ color: primaryColor }}>{brandName}</span>
-                <span className="text-xs text-muted">Client Portal</span>
-              </div>
-              <div className="h-28 rounded bg-surface flex items-center justify-center text-xs text-muted">
-                Branded Gallery Grid
-              </div>
-              <button
-                style={{ backgroundColor: primaryColor }}
-                className="w-full py-2 rounded text-xs font-semibold text-white transition-opacity hover:opacity-90"
-              >
-                Download Full Gallery
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <p>Beautiful moments. A distinctly personal experience.</p>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

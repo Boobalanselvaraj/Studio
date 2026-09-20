@@ -1,52 +1,65 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Image, LogOut, Sun, Moon } from 'lucide-react';
+import { Aperture, Moon, Sun, ArrowUpRight } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
+import { studioApi } from '../api/services';
 
-export function CustomerLayout({ branding = { brand_name: 'Studio Gallery', logo_url: null } }) {
+export function CustomerLayout() {
   const { theme, setTheme } = useTheme();
+  const [brand, setBrand] = useState({ name: 'StudioFlow Gallery', color: '#3B82F6' });
+
+  useEffect(() => {
+    async function loadBrand() {
+      try {
+        const data = await studioApi.getBranding();
+        if (data) {
+          setBrand({
+            name: data.brand_name || 'Studio Gallery',
+            color: data.primary_color || '#3B82F6',
+          });
+        }
+      } catch (err) {
+        // Fallback to default
+      }
+    }
+    loadBrand();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Studio-Branded Header */}
-      <header className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {branding.logo_url ? (
-              <img src={branding.logo_url} alt={branding.brand_name} className="h-8 max-w-[120px] object-contain" />
-            ) : (
-              <div className="flex items-center gap-2 font-bold text-lg text-foreground">
-                <Image className="w-5 h-5 text-brand-primary" />
-                <span>{branding.brand_name || 'Studio Gallery'}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="p-2 rounded hover:bg-surface-2 text-muted hover:text-foreground transition-colors"
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <Link
-              to="/login"
-              className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded hover:bg-surface-2 transition-colors"
-            >
-              Sign Out
-            </Link>
-          </div>
+    <div className="client-shell" style={{ '--brand-primary': brand.color }}>
+      <header className="client-header">
+        <Link to="/customer/galleries" className="client-brand">
+          <Aperture size={27} />
+          <span>{brand.name}</span>
+        </Link>
+        <div>
+          <span className="client-preview-label">CLIENT GALLERY</span>
+          <button
+            className="icon-button"
+            aria-label="Toggle color theme"
+            onClick={() =>
+              setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark')
+            }
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <Link className="text-link" to="/studio/dashboard">
+            Studio Workspace
+            <ArrowUpRight size={15} />
+          </Link>
         </div>
       </header>
 
-      {/* Gallery Canvas */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8">
+      <main className="client-main">
         <Outlet />
       </main>
 
-      {/* Minimal Footer */}
-      <footer className="border-t border-border py-6 text-center text-xs text-muted">
-        Powered by {branding.brand_name || 'StudioFlow'}
+      <footer className="client-footer">
+        <Aperture size={21} />
+        <p>Made with care. Meant to be kept.</p>
+        <span>
+          {brand.name} · High-Resolution Client Portal
+        </span>
       </footer>
     </div>
   );

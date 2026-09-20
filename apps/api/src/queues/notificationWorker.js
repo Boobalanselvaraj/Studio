@@ -1,4 +1,24 @@
 const { connectRabbitMQ } = require('../config/rabbitmq');
+const prisma = require('../config/prisma');
+
+async function handleNotificationMessage(payload) {
+  if (!payload.action) {
+    throw new Error('Notification payload requires action');
+  }
+
+  await prisma.audit_logs.create({
+    data: {
+      studio_id: payload.studioId || null,
+      user_id: payload.userId || null,
+      action: payload.action,
+      resource_type: 'notification',
+      resource_id: payload.eventId || payload.albumId || null,
+      details: payload,
+    },
+  });
+
+  return { status: 'recorded' };
+}
 
 async function startNotificationWorker() {
   const { channel } = await connectRabbitMQ();
@@ -13,7 +33,7 @@ async function startNotificationWorker() {
         const payload = JSON.parse(msg.content.toString());
         console.log('[Notification Worker] Processing notification payload:', payload);
 
-        // Send Email / SMS logic stub
+        await handleNotificationMessage(payload);
         
         channel.ack(msg);
       } catch (err) {
@@ -24,4 +44,7 @@ async function startNotificationWorker() {
   });
 }
 
-module.exports = { startNotificationWorker };
+module.exports = {
+  handleNotificationMessage,
+  startNotificationWorker,
+};

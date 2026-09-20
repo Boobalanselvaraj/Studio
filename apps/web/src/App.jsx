@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeProvider';
 
@@ -9,26 +9,33 @@ import { AdminLayout } from './layouts/AdminLayout';
 import { CustomerLayout } from './layouts/CustomerLayout';
 
 // Pages
-import { LoginPage } from './pages/auth/LoginPage';
-import { StudioDashboardPage } from './pages/studio/dashboard/StudioDashboardPage';
-import { EventsPage } from './pages/studio/events/EventsPage';
-import { EventDetailPage } from './pages/studio/events/EventDetailPage';
-import { FoldersPage } from './pages/studio/folders/FoldersPage';
-import { CamerasPage } from './pages/studio/cameras/CamerasPage';
-import { CustomersPage } from './pages/studio/customers/CustomersPage';
-import { StorageSettingsPage } from './pages/studio/storage/StorageSettingsPage';
-import { BrandingSettingsPage } from './pages/studio/branding/BrandingSettingsPage';
-import { BillingPage } from './pages/studio/billing/BillingPage';
-import { AdminDashboardPage } from './pages/super-admin/AdminDashboardPage';
-import { BillingPlansPage } from './pages/super-admin/BillingPlansPage';
-import { CustomerGalleriesPage } from './pages/customer/CustomerGalleriesPage';
-import { GalleryViewPage } from './pages/customer/GalleryViewPage';
+const LoginPage = lazy(() => import('./pages/auth/LoginPage').then(module => ({ default: module.LoginPage })));
+const StudioDashboardPage = lazy(() => import('./pages/studio/dashboard/StudioDashboardPage').then(module => ({ default: module.StudioDashboardPage })));
+const CalendarPage = lazy(() => import('./pages/studio/calendar/CalendarPage').then(module => ({ default: module.CalendarPage })));
+const EventsPage = lazy(() => import('./pages/studio/events/EventsPage').then(module => ({ default: module.EventsPage })));
+const EventDetailPage = lazy(() => import('./pages/studio/events/EventDetailPage').then(module => ({ default: module.EventDetailPage })));
+const FoldersPage = lazy(() => import('./pages/studio/folders/FoldersPage').then(module => ({ default: module.FoldersPage })));
+const CamerasPage = lazy(() => import('./pages/studio/cameras/CamerasPage').then(module => ({ default: module.CamerasPage })));
+const CustomersPage = lazy(() => import('./pages/studio/customers/CustomersPage').then(module => ({ default: module.CustomersPage })));
+const StorageSettingsPage = lazy(() => import('./pages/studio/storage/StorageSettingsPage').then(module => ({ default: module.StorageSettingsPage })));
+const BrandingSettingsPage = lazy(() => import('./pages/studio/branding/BrandingSettingsPage').then(module => ({ default: module.BrandingSettingsPage })));
+const BillingPage = lazy(() => import('./pages/studio/billing/BillingPage').then(module => ({ default: module.BillingPage })));
+const AdminDashboardPage = lazy(() => import('./pages/super-admin/AdminDashboardPage').then(module => ({ default: module.AdminDashboardPage })));
+const BillingPlansPage = lazy(() => import('./pages/super-admin/BillingPlansPage').then(module => ({ default: module.BillingPlansPage })));
+const CustomerGalleriesPage = lazy(() => import('./pages/customer/CustomerGalleriesPage').then(module => ({ default: module.CustomerGalleriesPage })));
+const GalleryViewPage = lazy(() => import('./pages/customer/GalleryViewPage').then(module => ({ default: module.GalleryViewPage })));
+
+import { useAuthStore } from './stores/authStore';
 
 export function App() {
+  React.useEffect(() => {
+    useAuthStore.getState().initAuth();
+  }, []);
+
   return (
-    <ThemeProvider defaultTheme="system" storageKey="studio-theme">
+    <ThemeProvider defaultTheme="light" storageKey="studio-theme">
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<div className="app-loading" role="status">Opening your workspace…</div>}><Routes>
           {/* Public / Auth */}
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
@@ -39,6 +46,7 @@ export function App() {
             <Route index element={<Navigate to="/studio/dashboard" replace />} />
             <Route path="dashboard" element={<StudioDashboardPage />} />
             <Route path="events" element={<EventsPage />} />
+            <Route path="calendar" element={<CalendarPage />} />
             <Route path="events/:id" element={<EventDetailPage />} />
             <Route path="folders" element={<FoldersPage />} />
             <Route path="cameras" element={<CamerasPage />} />
@@ -64,10 +72,12 @@ export function App() {
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+        </Routes></Suspense>
       </BrowserRouter>
     </ThemeProvider>
   );
 }
 
 export default App;
+
+

@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 
+const VALID_TAG_SOURCES = new Set(['manual', 'suggested']);
+
 async function list(req, res, next) {
   try {
     const tags = await prisma.tags.findMany({
@@ -23,8 +25,9 @@ async function list(req, res, next) {
 async function create(req, res, next) {
   try {
     const { label, color } = req.body;
+    const normalizedLabel = typeof label === 'string' ? label.trim() : '';
 
-    if (!label) {
+    if (!normalizedLabel) {
       return res.status(400).json({ error: 'Tag label is required' });
     }
 
@@ -32,12 +35,12 @@ async function create(req, res, next) {
       where: {
         studio_id_label: {
           studio_id: req.studioId,
-          label,
+          label: normalizedLabel,
         },
       },
       create: {
         studio_id: req.studioId,
-        label,
+        label: normalizedLabel,
         color: color || '#6B7280',
       },
       update: {
@@ -55,6 +58,35 @@ async function tagEvent(req, res, next) {
   try {
     const { tag_id, source = 'manual' } = req.body;
     const eventId = req.params.id;
+
+    if (!tag_id) {
+      return res.status(400).json({ error: 'tag_id is required' });
+    }
+
+    if (!VALID_TAG_SOURCES.has(source)) {
+      return res.status(400).json({ error: 'Invalid tag source' });
+    }
+
+    const [tag, event] = await Promise.all([
+      prisma.tags.findFirst({
+        where: {
+          id: tag_id,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+      prisma.events.findFirst({
+        where: {
+          id: eventId,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!tag || !event) {
+      return res.status(404).json({ error: 'Tag or event not found in this studio' });
+    }
 
     const eventTag = await prisma.event_tags.upsert({
       where: {
@@ -84,6 +116,35 @@ async function tagAsset(req, res, next) {
     const { tag_id, source = 'manual' } = req.body;
     const assetId = req.params.id;
 
+    if (!tag_id) {
+      return res.status(400).json({ error: 'tag_id is required' });
+    }
+
+    if (!VALID_TAG_SOURCES.has(source)) {
+      return res.status(400).json({ error: 'Invalid tag source' });
+    }
+
+    const [tag, asset] = await Promise.all([
+      prisma.tags.findFirst({
+        where: {
+          id: tag_id,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+      prisma.assets.findFirst({
+        where: {
+          id: assetId,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!tag || !asset) {
+      return res.status(404).json({ error: 'Tag or asset not found in this studio' });
+    }
+
     const assetTag = await prisma.asset_tags.upsert({
       where: {
         tag_id_asset_id: {
@@ -112,7 +173,10 @@ async function getSuggestedTags(req, res, next) {
     const assetId = req.params.id;
 
     const asset = await prisma.assets.findFirst({
-      where: { id: assetId },
+      where: {
+        id: assetId,
+        studio_id: req.studioId,
+      },
       include: {
         asset_tags: {
           where: { source: 'suggested' },

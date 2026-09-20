@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 
 async function listStudioCustomers(req, res, next) {
@@ -53,19 +54,110 @@ async function listStudioCustomers(req, res, next) {
   }
 }
 
-async function getMyGalleries(req, res, next) {
+async function createCustomer(req, res, next) {
   try {
-    const customer = await prisma.customers.findFirst({
-      where: { user_id: req.user.id },
-    });
+    const { full_name, email, phone, address, notes } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!customer) {
-      return res.json([]);
+    if (!normalizedEmail || !full_name) {
+      return res.status(400).json({ error: 'Full name and email are required' });
     }
 
+    if (!req.studioId) {
+      return res.status(400).json({ error: 'Studio context required' });
+    }
+
+    let user = await prisma.users.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      const salt = await bcrypt.genSalt(10);
+      const password_hash = await bcrypt.hash('customer123456', salt);
+      user = await prisma.users.create({
+        data: {
+          email: normalizedEmail,
+          password_hash,
+          full_name: full_name.trim(),
+          phone: phone || null,
+          is_super_admin: false,
+        },
+      });
+    }
+
+    const existingCustomer = await prisma.customers.findUnique({
+      where: {
+        studio_id_user_id: {
+          studio_id: req.studioId,
+          user_id: user.id,
+        },
+      },
+    });
+
+    if (existingCustomer) {
+      return res.status(409).json({ error: 'This customer is already registered with your studio' });
+    }
+
+    const customer = await prisma.customers.create({
+      data: {
+        studio_id: req.studioId,
+        user_id: user.id,
+        address: address || null,
+        notes: notes || null,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            full_name: true,
+            phone: true,
+          },
+        },
+        event_customers: {
+          include: {
+            event: {
+              select: { id: true, title: true, status: true },
+            },
+          },
+        },
+        album_customers: {
+          include: {
+            album: {
+              select: { id: true, title: true, is_published: true },
+            },
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      id: customer.id,
+      studio_id: customer.studio_id,
+      user_id: customer.user_id,
+      email: customer.user.email,
+      full_name: customer.user.full_name,
+      phone: customer.user.phone,
+      address: customer.address,
+      notes: customer.notes,
+      total_events: customer.event_customers.length,
+      total_albums: customer.album_customers.length,
+      events: customer.event_customers.map((ec) => ec.event),
+      albums: customer.album_customers.map((ac) => ac.album),
+      created_at: customer.created_at,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getMyGalleries(req, res, next) {
+  try {
     const albumCustomers = await prisma.album_customers.findMany({
       where: {
-        customer_id: customer.id,
+        customer: {
+          user_id: req.user.id,
+        },
         album: { is_published: true },
       },
       include: {
@@ -108,6 +200,31 @@ async function shareAlbum(req, res, next) {
       return res.status(400).json({ error: 'album_id and customer_id are required' });
     }
 
+    if (!req.studioId) {
+      return res.status(403).json({ error: 'Studio context is required to share albums' });
+    }
+
+    const [album, customer] = await Promise.all([
+      prisma.albums.findFirst({
+        where: {
+          id: album_id,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+      prisma.customers.findFirst({
+        where: {
+          id: customer_id,
+          studio_id: req.studioId,
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!album || !customer) {
+      return res.status(404).json({ error: 'Album or customer not found in this studio' });
+    }
+
     const share = await prisma.album_customers.upsert({
       where: {
         album_id_customer_id: {
@@ -135,6 +252,7 @@ async function shareAlbum(req, res, next) {
 
 module.exports = {
   listStudioCustomers,
+  createCustomer,
   getMyGalleries,
   shareAlbum,
 };

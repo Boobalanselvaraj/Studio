@@ -1,67 +1,8 @@
-import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, Building2, CreditCard, LogOut, Sun, Moon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Outlet, NavLink, Link, useLocation } from 'react-router-dom';
+import { ShieldCheck, Building2, CreditCard, ArrowUpRight, Menu, X, Sun, Moon, Aperture } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
-
-export function AdminLayout() {
-  const location = useLocation();
-  const { theme, setTheme } = useTheme();
-
-  const navItems = [
-    { label: 'Studios Management', path: '/admin/studios', icon: Building2 },
-    { label: 'Billing Plans', path: '/admin/billing-plans', icon: CreditCard },
-  ];
-
-  return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <aside className="w-64 border-r border-border bg-surface flex flex-col justify-between">
-        <div>
-          <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
-            <ShieldCheck className="w-5 h-5 text-brand-primary" />
-            <span className="font-bold text-base">Super Admin</span>
-          </div>
-
-          <nav className="p-4 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname.startsWith(item.path);
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-brand-primary text-brand-primary-foreground shadow-sm'
-                      : 'text-muted hover:text-foreground hover:bg-surface-2'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="p-4 border-t border-border flex items-center justify-between">
-          <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="p-2 rounded hover:bg-surface-2 text-muted hover:text-foreground"
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-          <Link to="/login" className="flex items-center gap-2 text-xs text-muted hover:text-status-danger">
-            <LogOut className="w-4 h-4" /> Exit
-          </Link>
-        </div>
-      </aside>
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto">
-          <Outlet />
-        </div>
-      </main>
-    </div>
-  );
+export function AdminLayout(){
+ const [open,setOpen]=useState(false);const location=useLocation();const {theme,setTheme}=useTheme();useEffect(()=>setOpen(false),[location.pathname]);
+ return <div className="workspace-shell admin-shell">{open&&<button className="sidebar-backdrop" aria-label="Close navigation" onClick={()=>setOpen(false)}/>}<aside className={`workspace-sidebar ${open?'is-open':''}`}><Link to="/admin/studios" className="wordmark"><span className="brand-mark"><Aperture size={24}/></span>studioflow.</Link><button className="mobile-close icon-button" aria-label="Close navigation" onClick={()=>setOpen(false)}><X size={18}/></button><div className="studio-identity"><ShieldCheck size={25} className="text-brand-primary"/><div><strong>Platform control</strong><span>Administrator workspace</span></div></div><div className="nav-label">PLATFORM</div><nav aria-label="Administration">{[['Studios','/admin/studios',Building2],['Billing plans','/admin/billing-plans',CreditCard]].map(([name,path,Icon])=><NavLink className={({isActive})=>`nav-item ${isActive?'active':''}`} to={path} key={path}><Icon size={18}/>{name}</NavLink>)}</nav><div className="sidebar-bottom"><div className="storage-mini"><strong>Frontend preview</strong><p>Sample platform data. Administration changes require backend integration.</p><Link to="/studio/dashboard">Studio workspace<ArrowUpRight size={14}/></Link></div></div></aside><div className="workspace-body"><header className="workspace-topbar"><div className="topbar-breadcrumb"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={()=>setOpen(true)}><Menu size={20}/></button><ShieldCheck size={17}/><strong>Platform administration</strong></div><button className="icon-button" aria-label="Toggle color theme" onClick={()=>setTheme(document.documentElement.classList.contains('dark')?'light':'dark')}>{theme==='dark'?<Sun size={19}/>:<Moon size={19}/>}</button></header><main className="workspace-content"><Outlet/></main><footer className="workspace-footer">StudioFlow · Platform preview</footer></div></div>;
 }

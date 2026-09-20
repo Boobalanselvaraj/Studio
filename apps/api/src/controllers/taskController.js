@@ -44,6 +44,18 @@ async function createTask(req, res, next) {
       return res.status(400).json({ error: 'Task title is required' });
     }
 
+    const event = await prisma.events.findFirst({
+      where: {
+        id: eventId,
+        studio_id: req.studioId,
+      },
+      select: { id: true },
+    });
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
     const task = await prisma.event_tasks.create({
       data: {
         event_id: eventId,
@@ -65,6 +77,20 @@ async function updateTask(req, res, next) {
     const { is_done, assignee_id, due_date, title } = req.body;
     const taskId = req.params.id;
 
+    const existing = await prisma.event_tasks.findFirst({
+      where: {
+        id: taskId,
+        event: {
+          studio_id: req.studioId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
     const task = await prisma.event_tasks.update({
       where: { id: taskId },
       data: {
@@ -85,6 +111,21 @@ async function updateTask(req, res, next) {
 async function deleteTask(req, res, next) {
   try {
     const taskId = req.params.id;
+
+    const existing = await prisma.event_tasks.findFirst({
+      where: {
+        id: taskId,
+        event: {
+          studio_id: req.studioId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
     await prisma.event_tasks.delete({ where: { id: taskId } });
     res.json({ message: 'Task deleted successfully', id: taskId });
   } catch (err) {

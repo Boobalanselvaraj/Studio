@@ -1,15 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const session = require('express-session');
-const RedisStore = require('connect-redis').default;
-
 const env = require('./config/env');
-const redisClient = require('./config/redis');
 const { connectRabbitMQ } = require('./config/rabbitmq');
-const routes = require('./routes');
-const errorHandler = require('./middlewares/errorHandler');
-const { apiLimiter } = require('./middlewares/rateLimiter');
+const createApp = require('./app');
 
 // Import queue consumers
 const { startNotificationWorker } = require('./queues/notificationWorker');
@@ -17,41 +8,7 @@ const { startMediaSyncWorker } = require('./queues/mediaSyncWorker');
 const { startEventAutomationWorker } = require('./queues/eventAutomationWorker');
 const { startBillingMeteringWorker } = require('./queues/billingMeteringWorker');
 
-const app = express();
-
-// Security & Base Middlewares
-app.use(helmet());
-app.use(cors({
-  origin: env.APP_URL,
-  credentials: true,
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-
-// Redis-backed Session Middleware
-app.use(
-  session({
-    store: new RedisStore({ client: redisClient, prefix: 'sess:' }),
-    secret: env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: env.NODE_ENV === 'production',
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      sameSite: env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    },
-  })
-);
-
-// Global Rate Limiting
-app.use('/api', apiLimiter);
-
-// API Route Mount
-app.use('/api', routes);
-
-// Centralized Error Handler
-app.use(errorHandler);
+const app = createApp();
 
 // Start Server and Queue Workers
 async function bootstrap() {

@@ -5,6 +5,7 @@ const brandingController = require('../controllers/brandingController');
 const customerController = require('../controllers/customerController');
 const { authenticate } = require('../middlewares/auth');
 const { resolveTenant } = require('../middlewares/tenant');
+const { requireStudioRole } = require('../middlewares/rbac');
 
 // Sub-module route imports
 const eventRoutes = require('./eventRoutes');
@@ -17,12 +18,15 @@ const billingRoutes = require('./billingRoutes');
 // Tenant Guard
 router.use(authenticate);
 router.use(resolveTenant);
+router.use(requireStudioRole());
 
 router.get('/profile', studioController.getProfile);
 router.get('/dashboard', studioController.getDashboardSummary);
 router.get('/branding', brandingController.getBranding);
 router.put('/branding', brandingController.updateBranding);
 router.get('/customers', customerController.listStudioCustomers);
+router.post('/customers', requireStudioRole(['studio_owner', 'studio_manager']), customerController.createCustomer);
+router.post('/customers/albums/share', requireStudioRole(['studio_owner', 'studio_manager']), customerController.shareAlbum);
 
 // Sub-modules
 router.use('/events', eventRoutes);

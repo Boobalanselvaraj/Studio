@@ -16,6 +16,9 @@ async function getUsage(req, res, next) {
       where: {
         studio_id: studioId,
         snapshot_date: { gte: today },
+        storage_provider: {
+          provider_type: 'platform',
+        },
       },
       _sum: { bytes_used: true },
     });
@@ -81,9 +84,15 @@ async function getPlans(req, res, next) {
 async function requestUpgrade(req, res, next) {
   try {
     const { requested_quota_gb, notes } = req.body;
+    const requestedQuotaGb = Number(requested_quota_gb);
+
+    if (!Number.isFinite(requestedQuotaGb) || requestedQuotaGb <= 0) {
+      return res.status(400).json({ error: 'requested_quota_gb must be a positive number' });
+    }
+
     res.status(202).json({
       message: 'Upgrade request submitted to platform administration',
-      requestedQuotaGb: requested_quota_gb,
+      requestedQuotaGb,
       notes,
     });
   } catch (err) {

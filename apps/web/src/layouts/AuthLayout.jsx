@@ -1,21 +1,8 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
-
+import { Outlet, Link } from 'react-router-dom';
+import { Aperture, ArrowUpRight } from 'lucide-react';
+import { photos } from '../data/workspace';
+import { Photo } from '../components/workspace/shared';
 export function AuthLayout() {
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-black tracking-tight text-foreground">
-            StudioFlow
-          </h1>
-          <p className="text-sm text-muted mt-1">
-            Photography Studio Management & Customer Delivery
-          </p>
-        </div>
-
-        <Outlet />
-      </div>
-    </div>
-  );
+ return <div className="auth-shell"><section className="auth-story"><Photo src={photos.wedding} alt="Sunlit wedding photography"/><div className="auth-shade"/><Link to="/studio/dashboard" className="wordmark"><Aperture size={29}/>studioflow.</Link><div className="auth-quote"><span>MORE CREATIVITY. LESS ADMIN.</span><h1>Behind every<br/>beautiful moment,<br/><em>a studio in flow.</em></h1><p>Your shoots, your team, and every frame in between.<br/>Thoughtfully brought together.</p></div><div className="auth-story-footer"><span>THE WORKSPACE FOR PHOTOGRAPHERS</span><Aperture size={23}/></div></section><section className="auth-form-side"><Link className="auth-preview text-link" to="/studio/dashboard">Explore the preview<ArrowUpRight size={15}/></Link><div className="auth-form-content"><Outlet/></div><p className="auth-footer">A little more time for what you love.</p></section></div>;
 }

@@ -81,6 +81,21 @@ async function move(req, res, next) {
       return res.status(404).json({ error: 'Folder not found' });
     }
 
+    if (target_parent_id) {
+      const targetParent = await prisma.folders.findFirst({
+        where: { id: target_parent_id, studio_id: req.studioId },
+      });
+
+      if (!targetParent) {
+        return res.status(404).json({ error: 'Target parent folder not found' });
+      }
+
+      const descendantIds = await getDescendantFolderIds(folderId, req.studioId);
+      if (descendantIds.includes(target_parent_id)) {
+        return res.status(400).json({ error: 'Folder cannot be moved inside one of its descendants' });
+      }
+    }
+
     const updated = await prisma.folders.update({
       where: { id: folderId },
       data: {
@@ -93,6 +108,26 @@ async function move(req, res, next) {
   } catch (err) {
     next(err);
   }
+}
+
+async function getDescendantFolderIds(folderId, studioId) {
+  const descendants = [];
+  let currentParentIds = [folderId];
+
+  while (currentParentIds.length > 0) {
+    const children = await prisma.folders.findMany({
+      where: {
+        studio_id: studioId,
+        parent_folder_id: { in: currentParentIds },
+      },
+      select: { id: true },
+    });
+
+    currentParentIds = children.map((child) => child.id);
+    descendants.push(...currentParentIds);
+  }
+
+  return descendants;
 }
 
 async function bulkMove(req, res, next) {
@@ -109,6 +144,20 @@ async function bulkMove(req, res, next) {
 
     if (!target) {
       return res.status(404).json({ error: 'Target destination folder not found' });
+    }
+
+    const items = await prisma.folder_items.findMany({
+      where: {
+        id: { in: item_ids },
+        folder: {
+          studio_id: req.studioId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (items.length !== item_ids.length) {
+      return res.status(400).json({ error: 'One or more folder items do not belong to this studio' });
     }
 
     await publishToQueue('media-sync', {

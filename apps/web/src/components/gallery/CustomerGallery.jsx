@@ -1,58 +1,14 @@
-import React, { useState } from 'react';
-import { Download, Heart, Maximize2, Share2 } from 'lucide-react';
-import { Button } from '../ui/button';
-
-export function CustomerGallery({ assets = [], studioBranding = {} }) {
-  const [selectedAsset, setSelectedAsset] = useState(null);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {assets.map((asset) => (
-          <div
-            key={asset.id}
-            className="group relative aspect-[3/2] overflow-hidden rounded-lg bg-surface-2 border border-border cursor-pointer shadow-sm hover:shadow-md transition-all"
-            onClick={() => setSelectedAsset(asset)}
-          >
-            <img
-              src={asset.thumbnailUrl || '/placeholder-photo.jpg'}
-              alt={asset.filename}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
-            />
-
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-3 text-white">
-              <span className="text-xs font-medium truncate max-w-[120px]">{asset.filename}</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // toggle favorite
-                  }}
-                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 transition-colors"
-                >
-                  <Heart className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // download asset
-                  }}
-                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {assets.length === 0 && (
-        <div className="text-center py-16 border-2 border-dashed border-border rounded-xl">
-          <p className="text-muted text-sm">No photos uploaded to this gallery yet.</p>
-        </div>
-      )}
-    </div>
-  );
+import React, { useState, useEffect } from 'react';
+import { Heart, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { Modal } from '../ui/modal';
+import { Photo } from '../workspace/shared';
+export function CustomerGallery({ assets = [], galleryId = 'preview' }) {
+ const [selected,setSelected]=useState(null); const [onlyFavorites,setOnlyFavorites]=useState(false);
+ const [favorites,setFavorites]=useState(()=>{try{return JSON.parse(localStorage.getItem(`studioflow-favorites-${galleryId}`))||[];}catch{return [];}});
+ useEffect(()=>{localStorage.setItem(`studioflow-favorites-${galleryId}`,JSON.stringify(favorites));},[favorites,galleryId]);
+ const visible=onlyFavorites?assets.filter(a=>favorites.includes(a.id)):assets;
+ const toggle=id=>setFavorites(current=>current.includes(id)?current.filter(i=>i!==id):[...current,id]);
+ const step=direction=>{const index=assets.findIndex(a=>a.id===selected?.id);setSelected(assets[(index+direction+assets.length)%assets.length]);};
+ useEffect(()=>{if(!selected)return;const key=e=>{if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}if(e.key==='ArrowRight'){e.preventDefault();step(1);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[selected,assets]);
+ return <><div className="gallery-toolbar"><span>{visible.length} photographs</span><button className={`button-outline ${onlyFavorites?'favorites-active':''}`} aria-pressed={onlyFavorites} onClick={()=>setOnlyFavorites(v=>!v)}><Heart size={15}/>{onlyFavorites?'Show all photos':`Favorites (${favorites.length})`}</button></div><div className="photo-masonry">{visible.map(asset=><article key={asset.id} className="gallery-photo"><button className="gallery-open" onClick={()=>setSelected(asset)} aria-label={`View ${asset.filename}`}><Photo src={asset.thumbnailUrl} alt={asset.filename}/></button><button className={`favorite-button ${favorites.includes(asset.id)?'is-favorite':''}`} aria-label={`Favorite ${asset.filename}`} aria-pressed={favorites.includes(asset.id)} onClick={()=>toggle(asset.id)}><Heart size={17} fill={favorites.includes(asset.id)?'currentColor':'none'}/></button></article>)}</div>{visible.length===0&&<div className="empty-state"><Heart size={30}/><h2>Your favorites start here</h2><p>Tap the heart on a photograph to save it to your shortlist.</p></div>}<Modal open={!!selected} onOpenChange={open=>!open&&setSelected(null)} title={selected?.filename || 'Photograph'} description="Use the arrow keys to browse. Favorites are saved on this device.">{selected&&<><Photo className="lightbox-photo" src={selected.thumbnailUrl} alt={selected.filename}/><div className="lightbox-controls"><button className="icon-button" onClick={()=>step(-1)} aria-label="Previous photograph"><ChevronLeft/></button><button className="icon-button" aria-label="Toggle favorite" aria-pressed={favorites.includes(selected.id)} onClick={()=>toggle(selected.id)}><Heart fill={favorites.includes(selected.id)?'currentColor':'none'}/></button><a className="icon-button" href={selected.thumbnailUrl} target="_blank" rel="noreferrer" aria-label="Open full photograph"><ExternalLink size={20}/></a><button className="icon-button" onClick={()=>step(1)} aria-label="Next photograph"><ChevronRight/></button></div></>}</Modal></>;
 }

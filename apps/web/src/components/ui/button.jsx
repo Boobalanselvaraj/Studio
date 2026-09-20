@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export function Button({ className, variant = 'primary', size = 'md', children, ...props }) {
-  const base = 'inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary disabled:pointer-events-none disabled:opacity-50 rounded';
+  const base = 'inline-flex items-center justify-center gap-2 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary disabled:pointer-events-none disabled:opacity-50 rounded-lg';
   
   const variants = {
     primary: 'bg-brand-primary text-brand-primary-foreground hover:opacity-90 shadow-sm',
@@ -28,3 +28,4 @@ export function Button({ className, variant = 'primary', size = 'md', children, 
     </button>
   );
 }
+

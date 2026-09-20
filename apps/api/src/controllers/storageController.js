@@ -1,6 +1,10 @@
 const prisma = require('../config/prisma');
 const { encryptStorageCredentials } = require('../config/storage');
 
+const VALID_PROVIDER_TYPES = new Set(['platform', 'studio_owned']);
+const VALID_BACKENDS = new Set(['local', 'sftp', 's3', 'smb']);
+const REMOTE_BACKENDS = new Set(['sftp', 's3', 'smb']);
+
 async function list(req, res, next) {
   try {
     const providers = await prisma.storage_providers.findMany({
@@ -25,6 +29,18 @@ async function create(req, res, next) {
 
     if (!name) {
       return res.status(400).json({ error: 'Storage provider name is required' });
+    }
+
+    if (!VALID_PROVIDER_TYPES.has(provider_type)) {
+      return res.status(400).json({ error: 'Invalid storage provider type' });
+    }
+
+    if (!VALID_BACKENDS.has(backend)) {
+      return res.status(400).json({ error: 'Invalid storage backend' });
+    }
+
+    if (REMOTE_BACKENDS.has(backend) && !credentials) {
+      return res.status(400).json({ error: `Credentials are required for ${backend.toUpperCase()} storage` });
     }
 
     const provider = await prisma.$transaction(async (tx) => {

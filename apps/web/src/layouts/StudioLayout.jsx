@@ -1,94 +1,335 @@
-import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  CalendarCheck, 
-  FolderTree, 
-  Camera, 
-  Users, 
-  HardDrive, 
-  Palette, 
+import React, { useEffect, useState } from 'react';
+import { Outlet, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Aperture,
+  LayoutDashboard,
+  CalendarCheck,
+  CalendarDays,
+  FolderOpen,
+  Camera,
+  Users,
+  HardDrive,
+  Palette,
   CreditCard,
   LogOut,
   Moon,
-  Sun
+  Sun,
+  Menu,
+  X,
+  ChevronRight,
+  ArrowUpRight,
+  Search,
+  Building2,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
+import { Modal } from '../components/ui/modal';
+import { useAuthStore } from '../stores/authStore';
+import { studioApi, eventsApi } from '../api/services';
+
+const nav = [
+  ['Overview', '/studio/dashboard', LayoutDashboard],
+  ['Events & shoots', '/studio/events', CalendarCheck],
+  ['Calendar', '/studio/calendar', CalendarDays],
+  ['Photo library', '/studio/folders', FolderOpen],
+  ['Customers', '/studio/customers', Users],
+  ['Cameras & sync', '/studio/cameras', Camera],
+];
+
+const settings = [
+  ['Storage', '/studio/storage', HardDrive],
+  ['Branding', '/studio/branding', Palette],
+  ['Billing & usage', '/studio/billing', CreditCard],
+];
 
 export function StudioLayout() {
-  const location = useLocation();
   const { theme, setTheme } = useTheme();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const navItems = [
-    { label: 'Dashboard', path: '/studio/dashboard', icon: LayoutDashboard },
-    { label: 'Events & Shoots', path: '/studio/events', icon: CalendarCheck },
-    { label: 'Folders & Files', path: '/studio/folders', icon: FolderTree },
-    { label: 'Cameras & SFTP', path: '/studio/cameras', icon: Camera },
-    { label: 'Customers', path: '/studio/customers', icon: Users },
-    { label: 'Storage Config', path: '/studio/storage', icon: HardDrive },
-    { label: 'Branding & Theme', path: '/studio/branding', icon: Palette },
-    { label: 'Billing & Usage', path: '/studio/billing', icon: CreditCard },
-  ];
+  const user = useAuthStore((s) => s.user);
+  const studios = useAuthStore((s) => s.studios);
+  const currentStudio = useAuthStore((s) => s.currentStudio);
+  const setCurrentStudio = useAuthStore((s) => s.setCurrentStudio);
+  const logout = useAuthStore((s) => s.logout);
+
+  const [mobile, setMobile] = useState(false);
+  const [search, setSearch] = useState(false);
+  const [query, setQuery] = useState('');
+  const [eventCount, setEventCount] = useState(0);
+  const [eventsList, setEventsList] = useState([]);
+  const [brandInfo, setBrandInfo] = useState({ brand_name: 'StudioFlow Workspace', primary_color: '#3B82F6' });
+
+  useEffect(() => {
+    setMobile(false);
+    setSearch(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearch((s) => !s);
+      }
+      if (e.key === 'Escape') setMobile(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const loadStudioData = async () => {
+    try {
+      const [branding, events] = await Promise.allSettled([
+        studioApi.getBranding(),
+        eventsApi.list(),
+      ]);
+
+      if (branding.status === 'fulfilled' && branding.value) {
+        setBrandInfo(branding.value);
+        if (branding.value.primary_color) {
+          document.documentElement.style.setProperty('--brand-primary', branding.value.primary_color);
+        }
+      }
+
+      if (events.status === 'fulfilled' && Array.isArray(events.value)) {
+        setEventsList(events.value);
+        setEventCount(events.value.length);
+      }
+    } catch (e) {
+      console.warn('Could not load studio data in layout:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadStudioData();
+  }, [currentStudio?.id]);
+
+  const active = [...nav, ...settings].find(([, path]) => location.pathname.startsWith(path));
+
+  const getInitials = (name) => {
+    if (!name) return 'SW';
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  const renderNav = (items) =>
+    items.map(([label, path, Icon]) => (
+      <NavLink
+        key={path}
+        to={path}
+        className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+      >
+        <Icon size={18} strokeWidth={1.7} />
+        <span>{label}</span>
+        {label === 'Events & shoots' && <span className="nav-count">{eventCount}</span>}
+      </NavLink>
+    ));
+
+  const displayName = brandInfo?.brand_name || currentStudio?.name || 'StudioFlow';
+  const studioInitials = getInitials(displayName);
+  const userInitials = getInitials(user?.full_name || 'Studio Member');
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-64 border-r border-border bg-surface flex flex-col justify-between">
-        <div>
-          <div className="h-16 flex items-center px-6 border-b border-border">
-            <h1 className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-brand-primary to-purple-600 bg-clip-text text-transparent">
-              StudioFlow
-            </h1>
+    <div
+      className="workspace-shell"
+      style={{ '--brand-primary': brandInfo?.primary_color || '#3B82F6' }}
+    >
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      {mobile && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobile(false)}
+        />
+      )}
+
+      <aside className={`workspace-sidebar ${mobile ? 'is-open' : ''}`}>
+        <Link to="/studio/dashboard" className="wordmark">
+          <span className="brand-mark">
+            <Aperture size={24} />
+          </span>
+          studioflow<span className="brand-dot">.</span>
+        </Link>
+        <button
+          className="mobile-close icon-button"
+          aria-label="Close navigation"
+          onClick={() => setMobile(false)}
+        >
+          <X size={18} />
+        </button>
+
+        <div className="studio-identity">
+          <span className="studio-avatar">{studioInitials}</span>
+          <div className="flex-1 overflow-hidden">
+            <strong>{displayName}</strong>
+            <span>{currentStudio?.role ? currentStudio.role.replace('_', ' ') : 'Photography workspace'}</span>
           </div>
-
-          <nav className="p-4 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname.startsWith(item.path);
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-brand-primary text-brand-primary-foreground shadow-sm'
-                      : 'text-muted hover:text-foreground hover:bg-surface-2'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          {studios && studios.length > 1 && (
+            <select
+              aria-label="Switch studio"
+              value={currentStudio?.id || ''}
+              onChange={(e) => {
+                const selected = studios.find((s) => s.id === e.target.value);
+                if (selected) setCurrentStudio(selected);
+              }}
+              className="text-xs bg-surface-2 border border-border rounded px-1 py-0.5"
+            >
+              {studios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {(!studios || studios.length <= 1) && <span className="plan-tag">LIVE</span>}
         </div>
 
-        {/* Footer controls */}
-        <div className="p-4 border-t border-border flex items-center justify-between">
-          <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="p-2 rounded hover:bg-surface-2 text-muted hover:text-foreground transition-colors"
-            title="Toggle theme"
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+        <div className="nav-label">WORKSPACE</div>
+        <nav aria-label="Workspace">{renderNav(nav)}</nav>
 
-          <Link
-            to="/login"
-            className="flex items-center gap-2 text-xs text-muted hover:text-status-danger p-2 rounded transition-colors"
-          >
-            <LogOut className="w-4 h-4" /> Logout
-          </Link>
+        <div className="nav-label settings-label">MANAGE</div>
+        <nav aria-label="Settings">{renderNav(settings)}</nav>
+
+        <div className="sidebar-bottom">
+          <div className="storage-mini">
+            <div>
+              <HardDrive size={15} />
+              <strong>{user?.is_super_admin ? 'Admin Studio' : 'Connected workspace'}</strong>
+            </div>
+            <p>{currentStudio ? `Connected to ${currentStudio.name}` : 'Explore your studio workspace.'}</p>
+            <Link to="/customer/galleries">
+              View client experience
+              <ArrowUpRight size={14} />
+            </Link>
+          </div>
+
+          <div className="sidebar-account">
+            <span className="account-avatar">{userInitials}</span>
+            <div className="flex-1 overflow-hidden">
+              <strong className="truncate block">{user?.full_name || 'Studio Member'}</strong>
+              <span className="truncate block">{user?.email || 'Active session'}</span>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={handleLogout}
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto">
-          <Outlet />
+      <div className="workspace-body">
+        <header className="workspace-topbar">
+          <div className="topbar-breadcrumb">
+            <button
+              className="icon-button mobile-menu"
+              aria-label="Open navigation"
+              aria-expanded={mobile}
+              onClick={() => setMobile(true)}
+            >
+              <Menu size={21} />
+            </button>
+            <span>Workspace</span>
+            <ChevronRight size={14} />
+            <strong>{active?.[0] || 'Event details'}</strong>
+          </div>
+
+          <div className="topbar-actions">
+            <button
+              className="search-trigger"
+              aria-label="Search workspace"
+              onClick={() => setSearch(true)}
+            >
+              <Search size={16} />
+              <span>Search workspace</span>
+              <kbd>Ctrl K</kbd>
+            </button>
+
+            <button
+              className="icon-button"
+              aria-label="Toggle color theme"
+              onClick={() =>
+                setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark')
+              }
+            >
+              {theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
+
+            <span className="topbar-avatar" title={user?.full_name || 'Member'}>
+              {userInitials}
+            </span>
+          </div>
+        </header>
+
+        <main id="main-content" className="workspace-content">
+          <Outlet context={{ refreshLayoutData: loadStudioData }} />
+        </main>
+
+        <footer className="workspace-footer">
+          <span>Made for the moments that matter.</span>
+          <span>
+            StudioFlow <span className="footer-dot">●</span> Multi-Tenant Studio Platform
+          </span>
+        </footer>
+      </div>
+
+      <Modal
+        open={search}
+        onOpenChange={setSearch}
+        title="Find your next moment"
+        description="Search pages and shoots in this workspace."
+      >
+        <input
+          className="search-input"
+          aria-label="Search pages and events"
+          placeholder="Search shoots by title or location…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          autoFocus
+        />
+        <div className="search-results">
+          {[...nav, ...settings]
+            .filter(([label]) => label.toLowerCase().includes(query.toLowerCase()))
+            .map(([label, path, Icon]) => (
+              <Link to={path} key={path} onClick={() => setSearch(false)}>
+                <Icon size={17} />
+                {label}
+                <ChevronRight size={15} />
+              </Link>
+            ))}
+          {eventsList
+            .filter(
+              (e) =>
+                e.title.toLowerCase().includes(query.toLowerCase()) ||
+                (e.location && e.location.toLowerCase().includes(query.toLowerCase()))
+            )
+            .map((e) => (
+              <Link
+                to={`/studio/events/${e.id}`}
+                key={e.id}
+                onClick={() => setSearch(false)}
+              >
+                <CalendarCheck size={17} />
+                <span className="flex-1 truncate">{e.title}</span>
+                <small className="text-muted mr-2">{e.status}</small>
+                <ChevronRight size={15} />
+              </Link>
+            ))}
         </div>
-      </main>
+      </Modal>
     </div>
   );
 }

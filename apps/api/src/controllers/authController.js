@@ -5,14 +5,23 @@ const env = require('../config/env');
 
 async function register(req, res, next) {
   try {
-    const { email, password, full_name, phone, is_super_admin = false } = req.body;
+    const { email, password, full_name, phone } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!email || !password || !full_name) {
+    if (!normalizedEmail || !password || !full_name) {
       return res.status(400).json({ error: 'Email, password, and full name are required' });
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+
     const existing = await prisma.users.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (existing) {
@@ -24,11 +33,11 @@ async function register(req, res, next) {
 
     const user = await prisma.users.create({
       data: {
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         password_hash,
         full_name,
         phone,
-        is_super_admin: !!is_super_admin,
+        is_super_admin: false,
       },
       select: {
         id: true,
@@ -52,13 +61,14 @@ async function register(req, res, next) {
 async function login(req, res, next) {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
     const user = await prisma.users.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
       include: {
         studio_users: {
           include: {
@@ -128,7 +138,30 @@ async function logout(req, res, next) {
 
 async function me(req, res, next) {
   try {
-    res.json({ user: req.user });
+    const memberships = await prisma.studio_users.findMany({
+      where: { user_id: req.user.id },
+      include: {
+        studio: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            is_active: true,
+          },
+        },
+      },
+    });
+
+    const studios = memberships
+      .filter((membership) => membership.studio.is_active)
+      .map((membership) => ({
+        id: membership.studio.id,
+        name: membership.studio.name,
+        slug: membership.studio.slug,
+        role: membership.role,
+      }));
+
+    res.json({ user: req.user, studios });
   } catch (err) {
     next(err);
   }
