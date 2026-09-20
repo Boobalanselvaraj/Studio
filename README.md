@@ -2,6 +2,8 @@
 
 A high-performance, multi-tenant SaaS platform built for professional photography studios. Features complete **Event / Shoot Workflow Management**, **Studio-Custom Hierarchical Folder Organization**, **Per-Studio Metered Storage Billing**, and a self-hosted **Immich / SFTPGo** media pipeline.
 
+> 📖 **Looking for the complete from-scratch guide?** Check out [**USER_AND_SETUP_GUIDE.md**](file:///e:/Existing/Studio%20App/USER_AND_SETUP_GUIDE.md) for full installation steps, seed credentials, role-by-role walkthroughs, and architecture details.
+
 ---
 
 ## 1. High-Level Architecture
