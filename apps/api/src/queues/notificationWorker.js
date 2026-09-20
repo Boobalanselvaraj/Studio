@@ -1,4 +1,4 @@
-const { connectRabbitMQ } = require('../../config/rabbitmq');
+const { connectRabbitMQ } = require('../config/rabbitmq');
 
 async function startNotificationWorker() {
   const { channel } = await connectRabbitMQ();

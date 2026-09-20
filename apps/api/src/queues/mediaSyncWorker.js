@@ -1,5 +1,5 @@
-const { connectRabbitMQ } = require('../../config/rabbitmq');
-const prisma = require('../../config/prisma');
+const { connectRabbitMQ } = require('../config/rabbitmq');
+const prisma = require('../config/prisma');
 
 async function startMediaSyncWorker() {
   const { channel } = await connectRabbitMQ();

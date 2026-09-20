@@ -12,10 +12,10 @@ const errorHandler = require('./middlewares/errorHandler');
 const { apiLimiter } = require('./middlewares/rateLimiter');
 
 // Import queue consumers
-const { startNotificationWorker } = require('./queues/notifications/notification.worker');
-const { startMediaSyncWorker } = require('./queues/media-sync/mediaSync.worker');
-const { startEventAutomationWorker } = require('./queues/event-automation/eventAutomation.worker');
-const { startBillingMeteringWorker } = require('./queues/billing-metering/billingMetering.worker');
+const { startNotificationWorker } = require('./queues/notificationWorker');
+const { startMediaSyncWorker } = require('./queues/mediaSyncWorker');
+const { startEventAutomationWorker } = require('./queues/eventAutomationWorker');
+const { startBillingMeteringWorker } = require('./queues/billingMeteringWorker');
 
 const app = express();
 
