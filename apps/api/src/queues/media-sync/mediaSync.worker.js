@@ -1,5 +1,5 @@
 const { connectRabbitMQ } = require('../../config/rabbitmq');
-const immichService = require('../../services/immich/immich.service');
+const prisma = require('../../config/prisma');
 
 async function startMediaSyncWorker() {
   const { channel } = await connectRabbitMQ();
@@ -14,8 +14,12 @@ async function startMediaSyncWorker() {
         const payload = JSON.parse(msg.content.toString());
         console.log('[Media Sync Worker] Processing media event:', payload);
 
-        if (payload.action === 'index_asset') {
-          await immichService.indexAsset(payload);
+        if (payload.action === 'index_asset' && payload.asset_id) {
+          // Direct asset status update & sync logic
+          await prisma.assets.update({
+            where: { asset_id: payload.asset_id },
+            data: { sync_status: 'SYNCED', indexed_at: new Date() }
+          });
         }
 
         channel.ack(msg);
