@@ -40,10 +40,7 @@ async function handleIngestEvent(req, res, next) {
     // 3. Server-side tenant & camera derivation from upload identity (never trust client-supplied studio ID)
     const camera = await prisma.cameras.findFirst({
       where: {
-        OR: [
-          { upload_username: username },
-          { sftpgo_username: username },
-        ],
+        sftpgo_username: username,
         lifecycle: { not: 'retired' },
       },
       include: {
