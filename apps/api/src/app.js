@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const morgan = require('morgan');
 const session = require('express-session');
 
 const env = require('./config/env');
@@ -13,9 +14,16 @@ function createApp(options = {}) {
   const enableRateLimit = options.enableRateLimit ?? env.NODE_ENV !== 'test';
   const sessionStore = options.sessionStore ?? createSessionStore();
 
+  if (env.NODE_ENV !== 'test') {
+    app.use(morgan('dev'));
+  }
+
   app.use(helmet());
   app.use(cors({
-    origin: env.APP_URL,
+    origin: (origin, callback) => {
+      // Allow any requesting origin (localhost, LAN IP, remote) with credentials
+      callback(null, true);
+    },
     credentials: true,
   }));
   app.use(express.json({ limit: '10mb' }));

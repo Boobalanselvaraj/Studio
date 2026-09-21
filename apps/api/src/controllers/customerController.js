@@ -1,5 +1,27 @@
+const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
+const env = require('../config/env');
+
+function getMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const map = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.cr2': 'image/x-canon-cr2',
+    '.cr3': 'image/x-canon-cr3',
+    '.arw': 'image/x-sony-arw',
+    '.nef': 'image/x-nikon-nef',
+    '.dng': 'image/x-adobe-dng',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+  };
+  return map[ext] || 'application/octet-stream';
+}
 
 async function listStudioCustomers(req, res, next) {
   try {
@@ -168,6 +190,7 @@ async function getMyGalleries(req, res, next) {
             },
             album_assets: {
               include: { asset: true },
+              orderBy: { sort_order: 'asc' },
             },
           },
         },
@@ -175,18 +198,176 @@ async function getMyGalleries(req, res, next) {
       orderBy: { created_at: 'desc' },
     });
 
-    const formatted = albumCustomers.map((ac) => ({
+    let formatted = (albumCustomers || []).map((ac) => ({
       ...ac.album,
+      album_assets: (ac.album?.album_assets || []).map((aa) => ({
+        ...aa,
+        asset: aa.asset
+          ? {
+              ...aa.asset,
+              file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
+            }
+          : aa.asset,
+      })),
       can_download: ac.can_download,
       can_favorite: ac.can_favorite,
-      studio_name: ac.album.studio.name,
-      brand_name: ac.album.studio.studio_branding?.brand_name,
-      logo_url: ac.album.studio.studio_branding?.logo_url,
-      primary_color: ac.album.studio.studio_branding?.primary_color,
-      photo_count: ac.album.album_assets.length,
+      studio_name: ac.album?.studio?.name || 'StudioFlow',
+      brand_name: ac.album?.studio?.studio_branding?.brand_name || ac.album?.studio?.name,
+      logo_url: ac.album?.studio?.studio_branding?.logo_url,
+      primary_color: ac.album?.studio?.studio_branding?.primary_color || '#3B82F6',
+      photo_count: ac.album?.album_assets?.length || 0,
+      cover: ac.album?.album_assets?.[0]?.asset
+        ? `/api/customer/assets/${ac.album.album_assets[0].asset.id}/view`
+        : null,
+      assets: (ac.album?.album_assets || [])
+        .filter((aa) => aa.asset)
+        .map((aa) => ({
+          id: aa.asset.id,
+          filename: aa.asset.filename,
+          mime_type: aa.asset.mime_type,
+          file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
+          thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
+          created_at: aa.asset.created_at,
+        })),
     }));
 
+    // Fallback: If customer has no individual albums, or if studio user is previewing:
+    if (formatted.length === 0 && prisma.albums?.findMany) {
+      const studioId = req.studioId;
+      const allStudioAlbums = await prisma.albums.findMany({
+        where: {
+          ...(studioId ? { studio_id: studioId } : {}),
+          is_published: true,
+        },
+        include: {
+          studio: {
+            include: { studio_branding: true },
+          },
+          album_assets: {
+            include: { asset: true },
+            orderBy: { sort_order: 'asc' },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      formatted = (allStudioAlbums || []).map((alb) => ({
+        ...alb,
+        album_assets: (alb.album_assets || []).map((aa) => ({
+          ...aa,
+          asset: aa.asset
+            ? {
+                ...aa.asset,
+                file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
+              }
+            : aa.asset,
+        })),
+        studio_name: alb.studio?.name || 'StudioFlow',
+        brand_name: alb.studio?.studio_branding?.brand_name || alb.studio?.name,
+        logo_url: alb.studio?.studio_branding?.logo_url,
+        primary_color: alb.studio?.studio_branding?.primary_color || '#3B82F6',
+        photo_count: alb.album_assets?.length || 0,
+        cover: alb.album_assets?.[0]?.asset
+          ? `/api/customer/assets/${alb.album_assets[0].asset.id}/view`
+          : null,
+        assets: (alb.album_assets || [])
+          .filter((aa) => aa.asset)
+          .map((aa) => ({
+            id: aa.asset.id,
+            filename: aa.asset.filename,
+            mime_type: aa.asset.mime_type,
+            file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
+            thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
+            created_at: aa.asset.created_at,
+          })),
+      }));
+    }
+
     res.json(formatted);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getAlbumById(req, res, next) {
+  try {
+    const albumId = req.params.id;
+    const album = await prisma.albums.findFirst({
+      where: {
+        id: albumId,
+        is_published: true,
+      },
+      include: {
+        studio: {
+          include: { studio_branding: true },
+        },
+        album_assets: {
+          include: { asset: true },
+          orderBy: { sort_order: 'asc' },
+        },
+      },
+    });
+
+    if (!album) {
+      return res.status(404).json({ error: 'Album collection not found or not published' });
+    }
+
+    const assets = (album.album_assets || [])
+      .filter((aa) => aa.asset)
+      .map((aa) => ({
+        id: aa.asset.id,
+        filename: aa.asset.filename,
+        mime_type: aa.asset.mime_type,
+        file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
+        thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
+        created_at: aa.asset.created_at,
+      }));
+
+    const firstAsset = assets[0];
+    const coverUrl = firstAsset ? firstAsset.thumbnailUrl : null;
+
+    res.json({
+      id: album.id,
+      title: album.title,
+      description: album.description,
+      is_published: album.is_published,
+      created_at: album.created_at,
+      studio_name: album.studio?.name || 'StudioFlow',
+      brand_name: album.studio?.studio_branding?.brand_name || album.studio?.name,
+      logo_url: album.studio?.studio_branding?.logo_url,
+      primary_color: album.studio?.studio_branding?.primary_color || '#3B82F6',
+      photo_count: assets.length,
+      cover: coverUrl,
+      assets: assets,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function serveCustomerAsset(req, res, next) {
+  try {
+    const assetId = req.params.id;
+    const asset = await prisma.assets.findUnique({
+      where: { id: assetId },
+    });
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    let filePath = path.resolve(process.cwd(), asset.original_path);
+    if (!fs.existsSync(filePath)) {
+      filePath = path.resolve(process.cwd(), '../../', asset.original_path);
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Physical image file missing from disk' });
+    }
+
+    res.setHeader('Content-Type', asset.mime_type || getMimeType(asset.filename));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
@@ -254,5 +435,7 @@ module.exports = {
   listStudioCustomers,
   createCustomer,
   getMyGalleries,
+  getAlbumById,
+  serveCustomerAsset,
   shareAlbum,
 };

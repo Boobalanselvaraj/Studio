@@ -1,5 +1,135 @@
+const path = require('path');
+const fs = require('fs');
 const prisma = require('../config/prisma');
+const env = require('../config/env');
 const { publishToQueue } = require('../config/rabbitmq');
+
+const SUPPORTED_MEDIA_EXTS = new Set([
+  '.jpg', '.jpeg', '.png', '.webp', '.gif',
+  '.cr2', '.cr3', '.arw', '.nef', '.dng',
+  '.tif', '.tiff', '.mp4', '.mov',
+]);
+
+function getMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const map = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.cr2': 'image/x-canon-cr2',
+    '.cr3': 'image/x-canon-cr3',
+    '.arw': 'image/x-sony-arw',
+    '.nef': 'image/x-nikon-nef',
+    '.dng': 'image/x-adobe-dng',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+function getStorageStudiosPath() {
+  const candidates = [
+    path.resolve(process.cwd(), 'storage/studios'),
+    path.resolve(process.cwd(), '../../storage/studios'),
+    path.resolve(process.cwd(), '../storage/studios'),
+    path.resolve(env.STORAGE_ROOT_PATH || './storage', 'studios'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return candidates[0];
+}
+
+async function scanStudioStorage(studioId) {
+  try {
+    const rootPath = getStorageStudiosPath();
+    if (!fs.existsSync(rootPath)) {
+      return { foldersCount: 0, assetsCount: 0 };
+    }
+
+    const entries = fs.readdirSync(rootPath, { withFileTypes: true });
+    let totalAssets = 0;
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const folderName = entry.name;
+        const folderFullPath = path.join(rootPath, folderName);
+
+        // Upsert Folder
+        let folder = await prisma.folders.findFirst({
+          where: { studio_id: studioId, name: folderName, parent_folder_id: null },
+        });
+
+        if (!folder) {
+          folder = await prisma.folders.create({
+            data: {
+              studio_id: studioId,
+              name: folderName,
+              color: '#3B82F6',
+            },
+          });
+        }
+
+        // Scan files inside folder
+        const files = fs.readdirSync(folderFullPath, { withFileTypes: true });
+        for (const file of files) {
+          if (file.isFile()) {
+            const ext = path.extname(file.name).toLowerCase();
+            if (SUPPORTED_MEDIA_EXTS.has(ext)) {
+              const fileFullPath = path.join(folderFullPath, file.name);
+              const stat = fs.statSync(fileFullPath);
+              const relPath = path.relative(process.cwd(), fileFullPath).replace(/\\/g, '/');
+
+              let asset = await prisma.assets.findFirst({
+                where: { studio_id: studioId, original_path: relPath },
+              });
+
+              if (!asset) {
+                asset = await prisma.assets.create({
+                  data: {
+                    studio_id: studioId,
+                    filename: file.name,
+                    original_path: relPath,
+                    mime_type: getMimeType(file.name),
+                    file_size_bytes: BigInt(stat.size),
+                  },
+                });
+              }
+
+              // Ensure folder item relation
+              const existingLink = await prisma.folder_items.findFirst({
+                where: {
+                  folder_id: folder.id,
+                  item_type: 'asset',
+                  item_id: asset.id,
+                },
+              });
+
+              if (!existingLink) {
+                await prisma.folder_items.create({
+                  data: {
+                    folder_id: folder.id,
+                    item_type: 'asset',
+                    item_id: asset.id,
+                  },
+                });
+              }
+
+              totalAssets++;
+            }
+          }
+        }
+      }
+    }
+
+    return { foldersCount: entries.filter((e) => e.isDirectory()).length, assetsCount: totalAssets };
+  } catch (err) {
+    console.warn('[Storage Scan Error]:', err.message);
+    return { error: err.message };
+  }
+}
 
 function buildHierarchy(folders, parentId = null) {
   return folders
@@ -12,6 +142,9 @@ function buildHierarchy(folders, parentId = null) {
 
 async function getTree(req, res, next) {
   try {
+    // Run auto storage scan so new camera shots appear immediately
+    await scanStudioStorage(req.studioId);
+
     const flatFolders = await prisma.folders.findMany({
       where: { studio_id: req.studioId },
       include: {
@@ -22,8 +155,99 @@ async function getTree(req, res, next) {
       orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
     });
 
-    const tree = buildHierarchy(flatFolders, null);
+    // Enrich folders with their actual asset objects
+    const allAssetItemIds = flatFolders
+      .flatMap((f) => f.folder_items)
+      .filter((it) => it.item_type === 'asset')
+      .map((it) => it.item_id);
+
+    let assetsMap = {};
+    if (allAssetItemIds.length > 0) {
+      const assets = await prisma.assets.findMany({
+        where: {
+          id: { in: allAssetItemIds },
+          studio_id: req.studioId,
+        },
+        select: {
+          id: true,
+          filename: true,
+          mime_type: true,
+          file_size_bytes: true,
+          created_at: true,
+          original_path: true,
+        },
+      });
+
+      assetsMap = Object.fromEntries(
+        assets.map((a) => [
+          a.id,
+          {
+            ...a,
+            file_size_bytes: a.file_size_bytes ? a.file_size_bytes.toString() : '0',
+            url: `/api/studio/folders/assets/${a.id}/view`,
+          },
+        ])
+      );
+    }
+
+    const enrichedFolders = flatFolders.map((f) => {
+      const folderAssets = f.folder_items
+        .filter((it) => it.item_type === 'asset' && assetsMap[it.item_id])
+        .map((it) => assetsMap[it.item_id]);
+
+      return {
+        ...f,
+        assets: folderAssets,
+        items_count: folderAssets.length,
+      };
+    });
+
+    const tree = buildHierarchy(enrichedFolders, null);
     res.json(tree);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function syncStorage(req, res, next) {
+  try {
+    const result = await scanStudioStorage(req.studioId);
+    res.json({
+      message: 'Studio storage successfully scanned and indexed',
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function serveAsset(req, res, next) {
+  try {
+    const assetId = req.params.id;
+    const asset = await prisma.assets.findFirst({
+      where: {
+        id: assetId,
+        studio_id: req.studioId,
+      },
+    });
+
+    if (!asset) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    let filePath = path.resolve(process.cwd(), asset.original_path);
+    if (!fs.existsSync(filePath)) {
+      // Try root workspace path
+      filePath = path.resolve(process.cwd(), '../../', asset.original_path);
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Physical media file missing from disk' });
+    }
+
+    res.setHeader('Content-Type', asset.mime_type || getMimeType(asset.filename));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
@@ -208,6 +432,104 @@ async function update(req, res, next) {
   }
 }
 
+async function publishGallery(req, res, next) {
+  try {
+    const folderId = req.params.id;
+    const { title, description } = req.body;
+
+    const folder = await prisma.folders.findFirst({
+      where: { id: folderId, studio_id: req.studioId },
+      include: {
+        folder_items: {
+          where: { item_type: 'asset' },
+        },
+      },
+    });
+
+    if (!folder) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    const albumTitle = title || folder.name.replace(/_/g, ' ');
+
+    let album = await prisma.albums.findFirst({
+      where: { studio_id: req.studioId, title: albumTitle },
+    });
+
+    if (!album) {
+      album = await prisma.albums.create({
+        data: {
+          studio_id: req.studioId,
+          title: albumTitle,
+          description: description || `Client gallery collection from folder '${folder.name}'`,
+          is_published: true,
+        },
+      });
+    } else {
+      await prisma.albums.update({
+        where: { id: album.id },
+        data: { is_published: true },
+      });
+    }
+
+    // Link folder assets
+    for (let i = 0; i < folder.folder_items.length; i++) {
+      const item = folder.folder_items[i];
+      await prisma.album_assets.upsert({
+        where: {
+          album_id_asset_id: {
+            album_id: album.id,
+            asset_id: item.item_id,
+          },
+        },
+        create: {
+          album_id: album.id,
+          asset_id: item.item_id,
+          sort_order: i,
+        },
+        update: {
+          sort_order: i,
+        },
+      });
+    }
+
+    // Link to all studio customers so they can view it in their portal
+    const customers = await prisma.customers.findMany({
+      where: { studio_id: req.studioId },
+    });
+
+    for (const cust of customers) {
+      await prisma.album_customers.upsert({
+        where: {
+          album_id_customer_id: {
+            album_id: album.id,
+            customer_id: cust.id,
+          },
+        },
+        create: {
+          album_id: album.id,
+          customer_id: cust.id,
+          can_download: true,
+          can_favorite: true,
+        },
+        update: {
+          can_download: true,
+          can_favorite: true,
+        },
+      });
+    }
+
+    res.json({
+      message: `Folder '${folder.name}' published as Client Gallery successfully!`,
+      album_id: album.id,
+      title: album.title,
+      photos_count: folder.folder_items.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteFolder(req, res, next) {
   try {
     const folderId = req.params.id;
@@ -232,6 +554,9 @@ async function deleteFolder(req, res, next) {
 
 module.exports = {
   getTree,
+  syncStorage,
+  serveAsset,
+  publishGallery,
   create,
   update,
   move,

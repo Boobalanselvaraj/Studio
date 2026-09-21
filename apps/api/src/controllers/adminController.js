@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 
 const VALID_BILLING_STATUSES = new Set(['active', 'past_due', 'suspended', 'comped']);
@@ -10,6 +11,18 @@ async function listStudios(req, res, next) {
         studio_branding: true,
         studio_billing_profile: {
           include: { billing_plan: true },
+        },
+        studio_users: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                full_name: true,
+                phone: true,
+              },
+            },
+          },
         },
         _count: {
           select: {
@@ -30,7 +43,18 @@ async function listStudios(req, res, next) {
 
 async function createStudio(req, res, next) {
   try {
-    const { name, slug, subdomain, custom_domain, storage_quota_gb = 50, billing_plan_id } = req.body;
+    const {
+      name,
+      slug,
+      subdomain,
+      custom_domain,
+      storage_quota_gb = 50,
+      billing_plan_id,
+      owner_email,
+      owner_name,
+      owner_password = 'studio123456',
+    } = req.body;
+
     const normalizedSlug = typeof slug === 'string' ? slug.trim().toLowerCase() : '';
     const quotaGb = Number(storage_quota_gb);
 
@@ -51,7 +75,16 @@ async function createStudio(req, res, next) {
       return res.status(409).json({ error: 'Studio slug already taken' });
     }
 
-    const studio = await prisma.$transaction(async (tx) => {
+    const targetOwnerEmail = (owner_email && owner_email.trim()) 
+      ? owner_email.trim().toLowerCase() 
+      : `owner@${normalizedSlug}.com`;
+    const targetOwnerName = (owner_name && owner_name.trim()) 
+      ? owner_name.trim() 
+      : `${name} Owner`;
+    const targetOwnerPass = owner_password || 'studio123456';
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create Studio
       const s = await tx.studios.create({
         data: {
           name,
@@ -61,29 +94,81 @@ async function createStudio(req, res, next) {
         },
       });
 
-      await tx.studio_branding.create({
-        data: {
-          studio_id: s.id,
-          brand_name: name,
-          primary_color: '#3B82F6',
-          secondary_color: '#1E293B',
-          accent_color: '#10B981',
-        },
-      });
+      // 2. Create Branding
+      if (tx.studio_branding?.create) {
+        await tx.studio_branding.create({
+          data: {
+            studio_id: s.id,
+            brand_name: name,
+            primary_color: '#3B82F6',
+            secondary_color: '#1E293B',
+            accent_color: '#10B981',
+          },
+        });
+      }
 
-      await tx.studio_billing_profile.create({
-        data: {
-          studio_id: s.id,
-          storage_quota_gb: quotaGb,
-          billing_plan_id,
-          billing_status: 'active',
-        },
-      });
+      // 3. Create Billing Profile
+      if (tx.studio_billing_profile?.create) {
+        await tx.studio_billing_profile.create({
+          data: {
+            studio_id: s.id,
+            storage_quota_gb: quotaGb,
+            billing_plan_id,
+            billing_status: 'active',
+          },
+        });
+      }
 
-      return s;
+      // 4. Create or Find Studio Owner User Account
+      let ownerInfo = {
+        email: targetOwnerEmail,
+        full_name: targetOwnerName,
+        role: 'studio_owner',
+        temporary_password: targetOwnerPass,
+      };
+
+      if (tx.users?.findUnique) {
+        let user = await tx.users.findUnique({
+          where: { email: targetOwnerEmail },
+        });
+
+        if (!user && tx.users?.create) {
+          const salt = await bcrypt.genSalt(10);
+          const password_hash = await bcrypt.hash(targetOwnerPass, salt);
+          user = await tx.users.create({
+            data: {
+              email: targetOwnerEmail,
+              full_name: targetOwnerName,
+              password_hash,
+              is_super_admin: false,
+            },
+          });
+        }
+
+        if (user && tx.studio_users?.create) {
+          await tx.studio_users.create({
+            data: {
+              studio_id: s.id,
+              user_id: user.id,
+              role: 'studio_owner',
+            },
+          });
+        }
+
+        if (user) {
+          ownerInfo.email = user.email;
+          ownerInfo.full_name = user.full_name;
+        }
+      }
+
+      return {
+        ...s,
+        studio: s,
+        owner: ownerInfo,
+      };
     });
 
-    res.status(201).json(studio);
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }

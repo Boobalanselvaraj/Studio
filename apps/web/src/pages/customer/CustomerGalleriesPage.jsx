@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { ArrowUpRight, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
 import { photos } from '../../data/workspace';
 import { Photo } from '../../components/workspace/shared';
 import { customerPortalApi } from '../../api/services';
@@ -52,7 +52,9 @@ export function CustomerGalleriesPage() {
   return (
     <>
       <div className="collection-intro">
-        <p className="eyebrow">YOUR MOMENTS, BEAUTIFULLY PRESERVED</p>
+        <p className="eyebrow flex items-center gap-1.5 justify-center">
+          <Sparkles size={14} className="text-brand-primary" /> YOUR MOMENTS, BEAUTIFULLY PRESERVED
+        </p>
         <h1>Stories worth keeping.</h1>
         <p>
           A collection of the little things and the once-in-a-lifetime.
@@ -71,11 +73,21 @@ export function CustomerGalleriesPage() {
           {galleries.map((g) => {
             const coverUrl =
               g.cover ||
-              g.cover_asset_id ||
-              (g.album_assets?.[0]?.asset?.original_path ? photos.wedding : photos.wedding);
+              g.assets?.[0]?.thumbnailUrl ||
+              photos.wedding;
 
-            const displayDate = g.date || (g.created_at ? new Date(g.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'Recent Collection');
-            const studioSubtitle = g.subtitle || `${g.studio_name || 'Studio'} · ${g.photo_count || 0} Photographs`;
+            const displayDate =
+              g.date ||
+              (g.created_at
+                ? new Date(g.created_at).toLocaleDateString(undefined, {
+                    month: 'long',
+                    year: 'numeric',
+                  })
+                : 'Recent Collection');
+
+            const studioSubtitle =
+              g.subtitle ||
+              `${g.brand_name || g.studio_name || 'StudioFlow'} · ${g.photo_count || g.assets?.length || 0} Photographs`;
 
             return (
               <Link to={`/gallery/${g.id}`} className="collection-card" key={g.id}>

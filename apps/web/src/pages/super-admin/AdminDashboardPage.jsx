@@ -4,7 +4,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Modal } from '../../components/ui/modal';
-import { Building2, Plus, Users, HardDrive, Loader2, Edit2 } from 'lucide-react';
+import { Building2, Plus, Users, HardDrive, Loader2, Edit2, KeyRound, CheckCircle2, Copy, ArrowRight, UserCheck } from 'lucide-react';
 import { adminApi } from '../../api/services';
 
 export function AdminDashboardPage() {
@@ -14,6 +14,8 @@ export function AdminDashboardPage() {
 
   const [createModal, setCreateModal] = useState(false);
   const [manageModal, setManageModal] = useState(false);
+  const [successModal, setSuccessModal] = useState(false);
+  const [createdResult, setCreatedResult] = useState(null);
   const [selectedStudio, setSelectedStudio] = useState(null);
 
   const [busy, setBusy] = useState(false);
@@ -25,6 +27,9 @@ export function AdminDashboardPage() {
   const [subdomain, setSubdomain] = useState('');
   const [quotaGb, setQuotaGb] = useState(100);
   const [billingPlanId, setBillingPlanId] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('studio123456');
 
   // Manage studio form
   const [editQuotaGb, setEditQuotaGb] = useState(100);
@@ -63,18 +68,27 @@ export function AdminDashboardPage() {
     try {
       setBusy(true);
       setError('');
-      await adminApi.createStudio({
+      const res = await adminApi.createStudio({
         name: name.trim(),
         slug: slug.trim().toLowerCase(),
         subdomain: subdomain.trim() || undefined,
         storage_quota_gb: Number(quotaGb),
         billing_plan_id: billingPlanId || undefined,
+        owner_name: ownerName.trim() || `${name.trim()} Owner`,
+        owner_email: ownerEmail.trim().toLowerCase() || `owner@${slug.trim().toLowerCase()}.com`,
+        owner_password: ownerPassword.trim() || 'studio123456',
       });
+
+      setCreatedResult(res);
+      setCreateModal(false);
+      setSuccessModal(true);
 
       setName('');
       setSlug('');
       setSubdomain('');
-      setCreateModal(false);
+      setOwnerName('');
+      setOwnerEmail('');
+      setOwnerPassword('studio123456');
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to provision studio');
@@ -139,6 +153,7 @@ export function AdminDashboardPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Studio Name</TableHead>
+                  <TableHead>Owner Account</TableHead>
                   <TableHead>Slug / Subdomain</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Storage Quota</TableHead>
@@ -152,11 +167,22 @@ export function AdminDashboardPage() {
                   const quota = s.studio_billing_profile?.storage_quota_gb || 50;
                   const plan = s.studio_billing_profile?.billing_plan?.name || 'Custom';
                   const billingStatus = s.studio_billing_profile?.billing_status || 'active';
+                  const owner = s.studio_users?.find((su) => su.role === 'studio_owner')?.user;
 
                   return (
                     <TableRow key={s.id}>
                       <TableCell className="font-semibold flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-brand-primary" /> {s.name}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {owner ? (
+                          <div>
+                            <span className="font-medium text-foreground">{owner.full_name}</span>
+                            <p className="text-muted text-[11px]">{owner.email}</p>
+                          </div>
+                        ) : (
+                          <span className="text-muted">Unassigned</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs text-muted">
                         <code>{s.slug}</code>
@@ -186,7 +212,7 @@ export function AdminDashboardPage() {
 
                 {studios.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-6 text-muted text-xs">
+                    <TableCell colSpan={8} className="text-center py-6 text-muted text-xs">
                       No studio tenants registered yet.
                     </TableCell>
                   </TableRow>
@@ -205,21 +231,27 @@ export function AdminDashboardPage() {
           if (!v) setError('');
         }}
         title="Provision New Studio Tenant"
-        description="Creates a new multi-tenant organization with its own isolated branding and database storage."
+        description="Creates a new studio tenant along with its dedicated Studio Owner login credentials."
       >
         <form className="form-stack" onSubmit={handleCreate}>
           {error && <p className="form-error">{error}</p>}
+
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted mt-1">1. Studio Organization</h3>
 
           <label>
             Studio Name
             <input
               required
-              placeholder="e.g. Lumina Creative Studios"
+              placeholder="e.g. Aura Photography Studio"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
                 if (!slug) {
-                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                  const autoSlug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                  setSlug(autoSlug);
+                  if (!ownerEmail) {
+                    setOwnerEmail(`owner@${autoSlug || 'studio'}.com`);
+                  }
                 }
               }}
             />
@@ -231,7 +263,7 @@ export function AdminDashboardPage() {
               <input
                 required
                 pattern="[a-z0-9-]+"
-                placeholder="lumina-studios"
+                placeholder="aura-studio"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
               />
@@ -240,7 +272,7 @@ export function AdminDashboardPage() {
             <label>
               Subdomain (optional)
               <input
-                placeholder="lumina"
+                placeholder="aura"
                 value={subdomain}
                 onChange={(e) => setSubdomain(e.target.value)}
               />
@@ -274,7 +306,43 @@ export function AdminDashboardPage() {
             </label>
           </div>
 
-          <div className="modal-actions">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted mt-3">2. Studio Owner Login Credentials</h3>
+
+          <label>
+            Owner Full Name
+            <input
+              required
+              placeholder="e.g. Rajesh Kumar"
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+            />
+          </label>
+
+          <div className="form-grid">
+            <label>
+              Owner Login Email
+              <input
+                type="email"
+                required
+                placeholder="owner@aurastudio.com"
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Owner Login Password
+              <input
+                type="text"
+                required
+                placeholder="studio123456"
+                value={ownerPassword}
+                onChange={(e) => setOwnerPassword(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="modal-actions mt-4">
             <Button
               type="button"
               variant="outline"
@@ -284,11 +352,75 @@ export function AdminDashboardPage() {
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : 'Provision Studio'}
+              {busy ? <Loader2 size={16} className="animate-spin" /> : 'Provision Studio & Owner'}
             </Button>
           </div>
         </form>
       </Modal>
+
+      {/* Success Credentials Modal */}
+      {createdResult && (
+        <Modal
+          open={successModal}
+          onOpenChange={setSuccessModal}
+          title="Studio Provisioned Successfully!"
+          description="The studio workspace and owner account have been created. Save these credentials to log in."
+        >
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs">
+              <p className="font-semibold flex items-center gap-1.5 text-sm mb-1">
+                <CheckCircle2 size={16} className="text-emerald-500" />
+                {createdResult.studio?.name || 'Studio'} is ready
+              </p>
+              <p className="text-muted-foreground">
+                You can now log in directly with these credentials at <code>/login</code>.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-surface-muted border border-border space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-muted">Studio Slug:</span>
+                <span className="font-mono font-semibold">{createdResult.studio?.slug}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted">Owner Name:</span>
+                <span className="font-semibold">{createdResult.owner?.full_name}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted">Login Email:</span>
+                <span className="font-mono font-bold text-brand-primary">{createdResult.owner?.email}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted">Login Password:</span>
+                <span className="font-mono font-bold text-foreground">{createdResult.owner?.temporary_password}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `Studio: ${createdResult.studio?.name}\nEmail: ${createdResult.owner?.email}\nPassword: ${createdResult.owner?.temporary_password}`
+                  );
+                  alert('Credentials copied to clipboard!');
+                }}
+              >
+                <Copy size={14} className="mr-1.5" /> Copy Credentials
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSuccessModal(false);
+                }}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Manage Studio Modal */}
       <Modal

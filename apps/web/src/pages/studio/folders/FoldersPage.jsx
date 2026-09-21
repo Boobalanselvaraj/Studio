@@ -4,12 +4,17 @@ import {
   Folder,
   Plus,
   ArrowUpRight,
-  Image,
+  Image as ImageIcon,
   Search,
   Trash2,
   ChevronRight,
   Loader2,
-  FolderTree as FolderTreeIcon,
+  RefreshCw,
+  Download,
+  Eye,
+  Camera,
+  X,
+  FileImage,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageHeading, Photo } from '../../../components/workspace/shared';
@@ -24,8 +29,10 @@ export function FoldersPage() {
 
   const [tree, setTree] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [openModal, setOpenModal] = useState(false);
+  const [lightboxAsset, setLightboxAsset] = useState(null);
   const [folderName, setFolderName] = useState('');
   const [folderColor, setFolderColor] = useState('#3B82F6');
   const [parentFolderId, setParentFolderId] = useState('');
@@ -38,11 +45,28 @@ export function FoldersPage() {
       const data = await foldersApi.getTree();
       if (Array.isArray(data)) {
         setTree(data);
+        // If current folder was selected, keep it updated with fresh assets
+        if (selectedFolder) {
+          const fresh = flattenFolders(data).find((f) => f.id === selectedFolder.id);
+          if (fresh) setSelectedFolder(fresh);
+        }
       }
     } catch (err) {
       console.warn('Folders tree load fallback:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncStorage = async () => {
+    try {
+      setSyncing(true);
+      await foldersApi.syncStorage();
+      await loadTree();
+    } catch (err) {
+      console.error('Storage sync error:', err);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -99,6 +123,15 @@ export function FoldersPage() {
     }
   };
 
+  const formatFileSize = (bytes) => {
+    const num = Number(bytes || 0);
+    if (!num) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(num) / Math.log(k));
+    return (num / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+  };
+
   const activeDisplayFolders = selectedFolder
     ? selectedFolder.children || []
     : tree;
@@ -112,12 +145,23 @@ export function FoldersPage() {
       <PageHeading
         eyebrow="EVERY FRAME IN ITS PLACE"
         title="Your creative library"
-        description="A little organization. A lot more room for inspiration."
+        description="Auto-synced with camera Wi-Fi tethering and local storage."
       >
-        <Button onClick={() => setOpenModal(true)}>
-          <Plus size={16} />
-          New folder
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSyncStorage}
+            disabled={syncing || loading}
+            title="Scan physical camera storage for new photos"
+          >
+            <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Scanning...' : 'Sync Storage'}
+          </Button>
+          <Button onClick={() => setOpenModal(true)}>
+            <Plus size={16} />
+            New folder
+          </Button>
+        </div>
       </PageHeading>
 
       <div className="filter-toolbar">
@@ -149,7 +193,7 @@ export function FoldersPage() {
       {loading ? (
         <div className="flex justify-center items-center py-20 text-muted">
           <Loader2 size={32} className="animate-spin text-brand-primary mr-3" />
-          <span>Loading studio folders…</span>
+          <span>Loading studio storage & media…</span>
         </div>
       ) : (
         <div className="space-y-6">
@@ -158,22 +202,36 @@ export function FoldersPage() {
             <div className="flex items-center justify-between panel p-4">
               <div className="flex items-center gap-2">
                 <button
-                  className="text-link text-sm"
+                  className="text-link text-sm font-medium"
                   onClick={() => setSelectedFolder(null)}
                 >
-                  Root
+                  Root Library
                 </button>
                 <ChevronRight size={14} className="text-muted" />
-                <span className="font-semibold">{selectedFolder.name}</span>
+                <span className="font-semibold text-foreground">{selectedFolder.name}</span>
+                <span className="text-xs text-muted px-2 py-0.5 rounded-full bg-surface-muted">
+                  {selectedFolder.assets?.length || 0} photo(s)
+                </span>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-red-500 hover:text-red-600"
-                onClick={() => handleDelete(selectedFolder.id)}
-              >
-                <Trash2 size={14} className="mr-1" /> Delete Folder
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncStorage}
+                  disabled={syncing}
+                >
+                  <RefreshCw size={14} className={`mr-1 ${syncing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-500 hover:text-red-600"
+                  onClick={() => handleDelete(selectedFolder.id)}
+                >
+                  <Trash2 size={14} className="mr-1" /> Delete Folder
+                </Button>
+              </div>
             </div>
           )}
 
@@ -181,7 +239,8 @@ export function FoldersPage() {
           <div className="library-grid">
             {filteredFolders.map((f) => {
               const subCount = f.children?.length || 0;
-              const itemsCount = f.folder_items?.length || 0;
+              const photoCount = f.assets?.length || f.items_count || 0;
+              const coverImage = f.assets?.[0]?.url || photos.landscape;
 
               return (
                 <div
@@ -193,7 +252,7 @@ export function FoldersPage() {
                     className="library-folder-cover"
                     style={{ borderTop: `3px solid ${f.color || '#3B82F6'}` }}
                   >
-                    <Photo src={photos.landscape} alt={f.name} />
+                    <Photo src={coverImage} alt={f.name} />
                     <span>
                       <FolderOpen size={18} />
                     </span>
@@ -204,10 +263,11 @@ export function FoldersPage() {
                       <ArrowUpRight size={16} />
                     </h2>
                     <p>
-                      {subCount} subfolders · {itemsCount} items
+                      {subCount > 0 ? `${subCount} subfolders · ` : ''}
+                      {photoCount} {photoCount === 1 ? 'photo' : 'photos'}
                     </p>
                     <small style={{ color: f.color || 'var(--brand-primary)' }}>
-                      ● Studio Directory
+                      ● {f.name.startsWith('2026') ? 'Camera Direct Ingest' : 'Studio Storage'}
                     </small>
                   </div>
                 </div>
@@ -215,48 +275,155 @@ export function FoldersPage() {
             })}
           </div>
 
-          {filteredFolders.length === 0 && (
+          {filteredFolders.length === 0 && !selectedFolder && (
             <div className="empty-state py-12">
               <Folder size={32} className="text-muted mb-2" />
               <h2>No folders in this directory</h2>
               <p className="text-sm text-muted mb-4">
-                Create a folder to organize your shoots, assets, and albums.
+                Take a shot with your camera or create a folder to organize your shoots.
               </p>
-              <Button onClick={() => setOpenModal(true)}>
-                <Plus size={16} /> New folder
-              </Button>
+              <div className="flex justify-center gap-3">
+                <Button variant="outline" onClick={handleSyncStorage} disabled={syncing}>
+                  <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+                  Scan Storage
+                </Button>
+                <Button onClick={() => setOpenModal(true)}>
+                  <Plus size={16} /> New folder
+                </Button>
+              </div>
             </div>
           )}
 
+          {/* Folder Details & Real Photos Grid */}
           {selectedFolder && (
             <section className="panel p-6 mt-6">
-              <div className="panel-heading p-0 mb-4">
+              <div className="panel-heading p-0 mb-4 flex justify-between items-center">
                 <div>
-                  <h2>Folder details: {selectedFolder.name}</h2>
-                  <p className="text-xs text-muted">
-                    Created on {new Date(selectedFolder.created_at).toLocaleDateString()}
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <FolderOpen size={20} className="text-brand-primary" />
+                    {selectedFolder.name}
+                  </h2>
+                  <p className="text-xs text-muted mt-0.5">
+                    {selectedFolder.assets?.length || 0} live camera frames detected · Created on {new Date(selectedFolder.created_at).toLocaleDateString()}
                   </p>
                 </div>
-                <span className="neutral-tag">Studio Storage</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const res = await foldersApi.publishGallery(selectedFolder.id);
+                        alert(res.message || 'Published to client galleries successfully!');
+                      } catch (err) {
+                        alert(err.response?.data?.error || 'Failed to publish gallery');
+                      }
+                    }}
+                  >
+                    <ArrowUpRight size={14} className="mr-1 text-brand-primary" />
+                    Publish to Client Gallery
+                  </Button>
+                  <Link className="button-primary text-xs flex items-center gap-1 py-1.5 px-3 rounded-lg" to="/customer/galleries">
+                    View in Client Portal
+                    <ArrowUpRight size={13} />
+                  </Link>
+                </div>
               </div>
 
-              <div className="library-photo-grid">
-                {[photos.wedding, photos.portrait, photos.landscape].map((url, i) => (
-                  <Photo key={i} src={url} alt={`${selectedFolder.name} frame ${i + 1}`} />
-                ))}
-              </div>
+              {selectedFolder.assets && selectedFolder.assets.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {selectedFolder.assets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="group relative rounded-xl overflow-hidden border border-border bg-surface-muted hover:border-brand-primary/50 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
+                      onClick={() => setLightboxAsset(asset)}
+                    >
+                      <div className="aspect-[4/3] w-full overflow-hidden bg-black/5 relative">
+                        <img
+                          src={asset.url}
+                          alt={asset.filename}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <span className="p-2 rounded-full bg-white/20 backdrop-blur-md text-white">
+                            <Eye size={18} />
+                          </span>
+                        </div>
+                        <span className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-sm">
+                          {asset.filename.split('.').pop()?.toUpperCase()}
+                        </span>
+                      </div>
 
-              <div className="mt-6 flex justify-between items-center gap-4">
-                <p className="text-xs text-muted">
-                  Organized under studio-managed storage.
-                </p>
-                <Link className="text-link" to="/customer/galleries">
-                  Client gallery preview
-                  <ArrowUpRight size={15} />
-                </Link>
-              </div>
+                      <div className="p-2.5">
+                        <p className="text-xs font-semibold text-foreground truncate" title={asset.filename}>
+                          {asset.filename}
+                        </p>
+                        <div className="flex justify-between items-center text-[11px] text-muted mt-1">
+                          <span>{formatFileSize(asset.file_size_bytes)}</span>
+                          <span>{new Date(asset.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state py-12 border border-dashed border-border rounded-xl">
+                  <FileImage size={36} className="text-muted mb-2 opacity-50" />
+                  <h3 className="font-semibold text-base mb-1">No photos in this folder yet</h3>
+                  <p className="text-xs text-muted max-w-md mx-auto mb-4">
+                    Take a shot on your camera or save images to <code>storage/studios/{selectedFolder.name}</code> to sync them instantly.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={handleSyncStorage} disabled={syncing}>
+                    <RefreshCw size={14} className={syncing ? 'animate-spin mr-1.5' : 'mr-1.5'} />
+                    Check for New Photos
+                  </Button>
+                </div>
+              )}
             </section>
           )}
+        </div>
+      )}
+
+      {/* Lightbox Photo Preview Modal */}
+      {lightboxAsset && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4"
+          onClick={() => setLightboxAsset(null)}
+        >
+          <div className="absolute top-4 right-4 flex items-center gap-3 z-10" onClick={(e) => e.stopPropagation()}>
+            <a
+              href={lightboxAsset.url}
+              download={lightboxAsset.filename}
+              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+              title="Download original image"
+            >
+              <Download size={18} />
+            </a>
+            <button
+              onClick={() => setLightboxAsset(null)}
+              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div
+            className="max-w-5xl max-h-[85vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxAsset.url}
+              alt={lightboxAsset.filename}
+              className="max-h-[75vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+            />
+            <div className="mt-4 text-center text-white">
+              <h3 className="font-semibold text-base">{lightboxAsset.filename}</h3>
+              <p className="text-xs text-white/70 mt-1">
+                {formatFileSize(lightboxAsset.file_size_bytes)} · {lightboxAsset.mime_type}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

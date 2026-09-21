@@ -90,6 +90,10 @@ export const foldersApi = {
     const res = await api.get('/studio/folders/tree');
     return res.data;
   },
+  syncStorage: async () => {
+    const res = await api.post('/studio/folders/sync-storage');
+    return res.data;
+  },
   create: async (data) => {
     const res = await api.post('/studio/folders', data);
     return res.data;
@@ -111,6 +115,10 @@ export const foldersApi = {
   },
   delete: async (id) => {
     const res = await api.delete(`/studio/folders/${id}`);
+    return res.data;
+  },
+  publishGallery: async (id, data = {}) => {
+    const res = await api.post(`/studio/folders/${id}/publish-gallery`, data);
     return res.data;
   },
 };
@@ -209,6 +217,10 @@ export const adminApi = {
 export const customerPortalApi = {
   getMyGalleries: async () => {
     const res = await api.get('/customer/albums');
+    return res.data;
+  },
+  getAlbumById: async (id) => {
+    const res = await api.get(`/customer/albums/${id}`);
     return res.data;
   },
 };
