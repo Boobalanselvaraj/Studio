@@ -3,6 +3,7 @@ import { Outlet, Link } from 'react-router-dom';
 import { Aperture, Moon, Sun, ArrowUpRight } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
 import { studioApi } from '../api/services';
+import { applyBrandColor } from '../theme/brandColor';
 
 export function CustomerLayout() {
   const { theme, setTheme } = useTheme();
@@ -13,10 +14,12 @@ export function CustomerLayout() {
       try {
         const data = await studioApi.getBranding();
         if (data) {
+          const color = data.primary_color || '#3B82F6';
           setBrand({
             name: data.brand_name || 'Studio Gallery',
-            color: data.primary_color || '#3B82F6',
+            color,
           });
+          applyBrandColor(color);
         }
       } catch (err) {
         // Fallback to default
@@ -24,9 +27,8 @@ export function CustomerLayout() {
     }
     loadBrand();
   }, []);
-
   return (
-    <div className="client-shell" style={{ '--brand-primary': brand.color }}>
+    <div className="client-shell">
       <header className="client-header">
         <Link to="/customer/galleries" className="client-brand">
           <Aperture size={27} />

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Modal } from '../../components/ui/modal';
+import { Select } from '../../components/ui/select';
 import { Plus, Loader2 } from 'lucide-react';
 import { adminApi } from '../../api/services';
 
@@ -169,14 +170,15 @@ export function BillingPlansPage() {
             </label>
             <label>
               Currency
-              <select
+              <Select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
-              >
-                <option value="INR">INR (₹)</option>
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-              </select>
+                options={[
+                  { value: 'INR', label: 'INR (₹)', description: 'Indian Rupee' },
+                  { value: 'USD', label: 'USD ($)', description: 'United States Dollar' },
+                  { value: 'EUR', label: 'EUR (€)', description: 'Euro' },
+                ]}
+              />
             </label>
           </div>
 

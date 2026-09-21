@@ -136,6 +136,10 @@ export const camerasApi = {
     const res = await api.patch(`/studio/cameras/${id}/status`, { is_active: isActive });
     return res.data;
   },
+  retire: async (id) => {
+    const res = await api.post(`/studio/cameras/${id}/retire`);
+    return res.data;
+  },
 };
 
 export const customersApi = {
@@ -162,8 +166,53 @@ export const storageApi = {
     const res = await api.post('/studio/storage/providers', data);
     return res.data;
   },
+  updateProvider: async (id, data) => {
+    const res = await api.put(`/studio/storage/providers/${id}`, data);
+    return res.data;
+  },
+  removeProvider: async (id) => {
+    const res = await api.delete(`/studio/storage/providers/${id}`);
+    return res.data;
+  },
   testConnection: async (id) => {
     const res = await api.post(`/studio/storage/providers/${id}/test`);
+    return res.data;
+  },
+};
+
+export const sharesApi = {
+  createShare: async (data) => {
+    const res = await api.post('/studio/shares/shares', data);
+    return res.data;
+  },
+  listShares: async (params = {}) => {
+    const res = await api.get('/studio/shares/shares', { params });
+    return res.data;
+  },
+  revokeShare: async (id) => {
+    const res = await api.delete(`/studio/shares/shares/${id}`);
+    return res.data;
+  },
+};
+
+export const uploadProfilesApi = {
+  createProfile: async (data) => {
+    const res = await api.post('/studio/upload-profiles/profiles', data);
+    return res.data;
+  },
+  listProfiles: async () => {
+    const res = await api.get('/studio/upload-profiles/profiles');
+    return res.data;
+  },
+  revokeProfile: async (id) => {
+    const res = await api.delete(`/studio/upload-profiles/profiles/${id}`);
+    return res.data;
+  },
+};
+
+export const publicGalleryApi = {
+  getSharedGallery: async (token) => {
+    const res = await api.get(`/public/shares/${token}`);
     return res.data;
   },
 };
@@ -189,6 +238,10 @@ export const billingApi = {
     const res = await api.post('/studio/billing/request-upgrade', data);
     return res.data;
   },
+  getRequests: async () => {
+    const res = await api.get('/studio/billing/requests');
+    return res.data;
+  },
 };
 
 export const adminApi = {
@@ -202,6 +255,18 @@ export const adminApi = {
   },
   updateStudioBilling: async (id, data) => {
     const res = await api.patch(`/admin/studios/${id}/billing-profile`, data);
+    return res.data;
+  },
+  getStudioAllocations: async (id) => {
+    const res = await api.get(`/admin/studios/${id}/allocations`);
+    return res.data;
+  },
+  listAllocationRequests: async () => {
+    const res = await api.get('/admin/allocation-requests');
+    return res.data;
+  },
+  resolveAllocationRequest: async (id, data) => {
+    const res = await api.post(`/admin/allocation-requests/${id}/resolve`, data);
     return res.data;
   },
   getBillingPlans: async () => {

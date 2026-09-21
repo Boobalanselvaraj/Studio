@@ -24,60 +24,66 @@ const AdminDashboardPage = lazy(() => import('./pages/super-admin/AdminDashboard
 const BillingPlansPage = lazy(() => import('./pages/super-admin/BillingPlansPage').then(module => ({ default: module.BillingPlansPage })));
 const CustomerGalleriesPage = lazy(() => import('./pages/customer/CustomerGalleriesPage').then(module => ({ default: module.CustomerGalleriesPage })));
 const GalleryViewPage = lazy(() => import('./pages/customer/GalleryViewPage').then(module => ({ default: module.GalleryViewPage })));
+const PublicGalleryViewPage = lazy(() => import('./pages/public/PublicGalleryViewPage').then(module => ({ default: module.PublicGalleryViewPage })));
 
 import { useAuthStore } from './stores/authStore';
+import { initBrandColor } from './theme/brandColor';
 
 export function App() {
   React.useEffect(() => {
+    initBrandColor();
     useAuthStore.getState().initAuth();
   }, []);
 
   return (
     <ThemeProvider defaultTheme="light" storageKey="studio-theme">
       <BrowserRouter>
-        <Suspense fallback={<div className="app-loading" role="status">Opening your workspace…</div>}><Routes>
-          {/* Public / Auth */}
-          <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-          </Route>
+        <Suspense fallback={<div className="app-loading" role="status">Opening your workspace…</div>}>
+          <Routes>
+            {/* Public Shared Gallery Link (Bearer view without login) */}
+            <Route path="/shared/:token" element={<PublicGalleryViewPage />} />
 
-          {/* Studio Management Zone */}
-          <Route path="/studio" element={<StudioLayout />}>
-            <Route index element={<Navigate to="/studio/dashboard" replace />} />
-            <Route path="dashboard" element={<StudioDashboardPage />} />
-            <Route path="events" element={<EventsPage />} />
-            <Route path="calendar" element={<CalendarPage />} />
-            <Route path="events/:id" element={<EventDetailPage />} />
-            <Route path="folders" element={<FoldersPage />} />
-            <Route path="cameras" element={<CamerasPage />} />
-            <Route path="customers" element={<CustomersPage />} />
-            <Route path="storage" element={<StorageSettingsPage />} />
-            <Route path="branding" element={<BrandingSettingsPage />} />
-            <Route path="billing" element={<BillingPage />} />
-          </Route>
+            {/* Public / Auth */}
+            <Route element={<AuthLayout />}>
+              <Route path="/login" element={<LoginPage />} />
+            </Route>
 
-          {/* Super Admin Zone */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="/admin/studios" replace />} />
-            <Route path="studios" element={<AdminDashboardPage />} />
-            <Route path="billing-plans" element={<BillingPlansPage />} />
-          </Route>
+            {/* Studio Management Zone */}
+            <Route path="/studio" element={<StudioLayout />}>
+              <Route index element={<Navigate to="/studio/dashboard" replace />} />
+              <Route path="dashboard" element={<StudioDashboardPage />} />
+              <Route path="events" element={<EventsPage />} />
+              <Route path="calendar" element={<CalendarPage />} />
+              <Route path="events/:id" element={<EventDetailPage />} />
+              <Route path="folders" element={<FoldersPage />} />
+              <Route path="cameras" element={<CamerasPage />} />
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="storage" element={<StorageSettingsPage />} />
+              <Route path="branding" element={<BrandingSettingsPage />} />
+              <Route path="billing" element={<BillingPage />} />
+            </Route>
 
-          {/* Customer Portal Zone */}
-          <Route path="/" element={<CustomerLayout />}>
-            <Route index element={<Navigate to="/customer/galleries" replace />} />
-            <Route path="customer/galleries" element={<CustomerGalleriesPage />} />
-            <Route path="gallery/:albumId" element={<GalleryViewPage />} />
-          </Route>
+            {/* Super Admin Zone */}
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="/admin/studios" replace />} />
+              <Route path="studios" element={<AdminDashboardPage />} />
+              <Route path="billing-plans" element={<BillingPlansPage />} />
+            </Route>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes></Suspense>
+            {/* Customer Portal Zone */}
+            <Route path="/" element={<CustomerLayout />}>
+              <Route index element={<Navigate to="/customer/galleries" replace />} />
+              <Route path="customer/galleries" element={<CustomerGalleriesPage />} />
+              <Route path="gallery/:albumId" element={<GalleryViewPage />} />
+            </Route>
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </ThemeProvider>
   );
 }
 
 export default App;
-
-

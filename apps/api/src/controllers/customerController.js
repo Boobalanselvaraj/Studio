@@ -3,6 +3,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 const env = require('../config/env');
+const { albumAccessWhere, deliverAsset } = require('../services/mediaAccess');
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -180,7 +181,7 @@ async function getMyGalleries(req, res, next) {
         customer: {
           user_id: req.user.id,
         },
-        album: { is_published: true },
+        album: { is_published: true, studio: { is_active: true } },
       },
       include: {
         album: {
@@ -220,7 +221,7 @@ async function getMyGalleries(req, res, next) {
         ? `/api/customer/assets/${ac.album.album_assets[0].asset.id}/view`
         : null,
       assets: (ac.album?.album_assets || [])
-        .filter((aa) => aa.asset)
+        .filter((aa) => aa.asset && !aa.asset.is_soft_deleted)
         .map((aa) => ({
           id: aa.asset.id,
           filename: aa.asset.filename,
@@ -230,58 +231,6 @@ async function getMyGalleries(req, res, next) {
           created_at: aa.asset.created_at,
         })),
     }));
-
-    // Fallback: If customer has no individual albums, or if studio user is previewing:
-    if (formatted.length === 0 && prisma.albums?.findMany) {
-      const studioId = req.studioId;
-      const allStudioAlbums = await prisma.albums.findMany({
-        where: {
-          ...(studioId ? { studio_id: studioId } : {}),
-          is_published: true,
-        },
-        include: {
-          studio: {
-            include: { studio_branding: true },
-          },
-          album_assets: {
-            include: { asset: true },
-            orderBy: { sort_order: 'asc' },
-          },
-        },
-        orderBy: { created_at: 'desc' },
-      });
-
-      formatted = (allStudioAlbums || []).map((alb) => ({
-        ...alb,
-        album_assets: (alb.album_assets || []).map((aa) => ({
-          ...aa,
-          asset: aa.asset
-            ? {
-                ...aa.asset,
-                file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
-              }
-            : aa.asset,
-        })),
-        studio_name: alb.studio?.name || 'StudioFlow',
-        brand_name: alb.studio?.studio_branding?.brand_name || alb.studio?.name,
-        logo_url: alb.studio?.studio_branding?.logo_url,
-        primary_color: alb.studio?.studio_branding?.primary_color || '#3B82F6',
-        photo_count: alb.album_assets?.length || 0,
-        cover: alb.album_assets?.[0]?.asset
-          ? `/api/customer/assets/${alb.album_assets[0].asset.id}/view`
-          : null,
-        assets: (alb.album_assets || [])
-          .filter((aa) => aa.asset)
-          .map((aa) => ({
-            id: aa.asset.id,
-            filename: aa.asset.filename,
-            mime_type: aa.asset.mime_type,
-            file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
-            thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
-            created_at: aa.asset.created_at,
-          })),
-      }));
-    }
 
     res.json(formatted);
   } catch (err) {
@@ -295,7 +244,7 @@ async function getAlbumById(req, res, next) {
     const album = await prisma.albums.findFirst({
       where: {
         id: albumId,
-        is_published: true,
+        ...albumAccessWhere(req.user.id),
       },
       include: {
         studio: {
@@ -313,7 +262,7 @@ async function getAlbumById(req, res, next) {
     }
 
     const assets = (album.album_assets || [])
-      .filter((aa) => aa.asset)
+      .filter((aa) => aa.asset && !aa.asset.is_soft_deleted)
       .map((aa) => ({
         id: aa.asset.id,
         filename: aa.asset.filename,
@@ -348,26 +297,11 @@ async function getAlbumById(req, res, next) {
 async function serveCustomerAsset(req, res, next) {
   try {
     const assetId = req.params.id;
-    const asset = await prisma.assets.findUnique({
-      where: { id: assetId },
+    const asset = await prisma.assets.findFirst({
+      where: { id: assetId, is_soft_deleted: false, album_assets: { some: { album: albumAccessWhere(req.user.id) } } },
     });
-
-    if (!asset) {
-      return res.status(404).json({ error: 'Asset not found' });
-    }
-
-    let filePath = path.resolve(process.cwd(), asset.original_path);
-    if (!fs.existsSync(filePath)) {
-      filePath = path.resolve(process.cwd(), '../../', asset.original_path);
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Physical image file missing from disk' });
-    }
-
-    res.setHeader('Content-Type', asset.mime_type || getMimeType(asset.filename));
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.sendFile(filePath);
+    if (!asset) return res.status(404).json({ error: 'Media not found' });
+    return await deliverAsset(asset, req, res);
   } catch (err) {
     next(err);
   }

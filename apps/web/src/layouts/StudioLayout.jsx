@@ -25,6 +25,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { Modal } from '../components/ui/modal';
 import { useAuthStore } from '../stores/authStore';
 import { studioApi, eventsApi } from '../api/services';
+import { applyBrandColor } from '../theme/brandColor';
 
 const nav = [
   ['Overview', '/studio/dashboard', LayoutDashboard],
@@ -86,7 +87,7 @@ export function StudioLayout() {
       if (branding.status === 'fulfilled' && branding.value) {
         setBrandInfo(branding.value);
         if (branding.value.primary_color) {
-          document.documentElement.style.setProperty('--brand-primary', branding.value.primary_color);
+          applyBrandColor(branding.value.primary_color);
         }
       }
 
@@ -138,10 +139,7 @@ export function StudioLayout() {
   const userInitials = getInitials(user?.full_name || 'Studio Member');
 
   return (
-    <div
-      className="workspace-shell"
-      style={{ '--brand-primary': brandInfo?.primary_color || '#3B82F6' }}
-    >
+    <div className="workspace-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>

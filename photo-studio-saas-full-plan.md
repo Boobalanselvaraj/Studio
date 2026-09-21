@@ -1,3 +1,5 @@
+> Superseded in part by [Studio Platform Implementation Plan v4](STUDIO_PLATFORM_IMPLEMENTATION_PLAN.md). For allocations, storage ownership, camera limits, WiFi, public gallery links, billing components and internal media integration, v4 is authoritative. The v3 login-only/no-token decision below is historical and no longer applies.
+
 # Photo Studio SaaS Platform — Full Architecture & Build Plan (v3)
 
 This document expands the original build plan with two major feature tracks the studios need:
@@ -745,3 +747,4 @@ Every request in Express passes through tenant + RBAC middleware before hitting 
 This version adds the event workflow engine, the studio-defined folder tree, the theme system, per-studio billing management, the full RBAC model, security/multi-tenancy guarantees, and non-functional requirements (performance, backups, monitoring, testing, deployment) on top of the original v1 plan — all reflected in the schema, API surface, repo structure, and phased build order above.
 
 Backend Phase 1 (infrastructure) is the natural starting point. Say the word and the next output will be the actual Docker Compose files, Postgres migrations (including `events`, `event_tasks`, `folders`, `tags`, `studio_billing_profile`, `invoices`, `billing_adjustments`), and the Express skeleton with auth + tenant + RBAC middleware.
+

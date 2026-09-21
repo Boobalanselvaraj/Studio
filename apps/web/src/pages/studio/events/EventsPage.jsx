@@ -3,6 +3,7 @@ import { Link, useSearchParams, useOutletContext } from 'react-router-dom';
 import { Search, LayoutGrid, List, Calendar, ArrowUpRight, Loader2 } from 'lucide-react';
 import { EventKanban } from '../../../components/event-kanban/EventKanban';
 import { PageHeading, NewEventButton, Status } from '../../../components/workspace/shared';
+import { Select } from '../../../components/ui/select';
 import { statuses, formatDate } from '../../../data/workspace';
 import { eventsApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
@@ -120,18 +121,20 @@ export function EventsPage() {
             />
           </label>
 
-          <select
+          <Select
             aria-label="Filter by status"
             value={status}
             onChange={(e) => handleStatusFilterChange(e.target.value)}
-          >
-            <option value="all">All statuses</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            searchable={false}
+            className="w-48"
+            options={[
+              { value: 'all', label: 'All statuses' },
+              ...statuses.map((s) => ({
+                value: s,
+                label: s.charAt(0).toUpperCase() + s.slice(1),
+              })),
+            ]}
+          />
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import { PageHeading, Photo } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
 import { studioApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
+import { applyBrandColor } from '../../../theme/brandColor';
 
 export function BrandingSettingsPage() {
   const currentStudio = useAuthStore((s) => s.currentStudio);
@@ -19,13 +20,21 @@ export function BrandingSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const handleColorChange = (newColor) => {
+    setPrimaryColor(newColor);
+    setSaved(false);
+    applyBrandColor(newColor);
+  };
+
   const loadBranding = async () => {
     try {
       setLoading(true);
       const data = await studioApi.getBranding();
       if (data) {
         setBrandName(data.brand_name || currentStudio?.name || '');
-        setPrimaryColor(data.primary_color || '#3B82F6');
+        const color = data.primary_color || '#3B82F6';
+        setPrimaryColor(color);
+        applyBrandColor(color);
         setLogoUrl(data.logo_url || '');
       }
     } catch (err) {
@@ -50,7 +59,7 @@ export function BrandingSettingsPage() {
         logo_url: logoUrl || undefined,
       });
 
-      document.documentElement.style.setProperty('--brand-primary', primaryColor);
+      applyBrandColor(primaryColor);
       setSaved(true);
       outletContext?.refreshLayoutData?.();
     } catch (err) {
@@ -106,20 +115,14 @@ export function BrandingSettingsPage() {
                     aria-label="Pick signature color"
                     type="color"
                     value={primaryColor}
-                    onChange={(e) => {
-                      setPrimaryColor(e.target.value);
-                      setSaved(false);
-                    }}
+                    onChange={(e) => handleColorChange(e.target.value)}
                   />
                   <input
                     aria-label="Hex color code"
                     required
                     pattern="#[0-9a-fA-F]{6}"
                     value={primaryColor}
-                    onChange={(e) => {
-                      setPrimaryColor(e.target.value);
-                      setSaved(false);
-                    }}
+                    onChange={(e) => handleColorChange(e.target.value)}
                   />
                 </div>
               </label>
@@ -131,10 +134,7 @@ export function BrandingSettingsPage() {
                     aria-label={`Use ${c} color`}
                     key={c}
                     style={{ background: c }}
-                    onClick={() => {
-                      setPrimaryColor(c);
-                      setSaved(false);
-                    }}
+                    onClick={() => handleColorChange(c)}
                   >
                     {primaryColor === c && <Check size={14} />}
                   </button>

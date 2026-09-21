@@ -1,3 +1,5 @@
+> Current development specification: [Studio Platform Implementation Plan v4](STUDIO_PLATFORM_IMPLEMENTATION_PLAN.md). It includes the audited source gaps, all nine revised requirements, migration sequence and release acceptance gates. Planned capabilities are not a statement that the current implementation is complete.
+
 # Photo Studio SaaS Platform (v3)
 
 A high-performance, multi-tenant SaaS platform built for professional photography studios. Features complete **Event / Shoot Workflow Management**, **Studio-Custom Hierarchical Folder Organization**, **Per-Studio Metered Storage Billing**, and a self-hosted **Immich / SFTPGo** media pipeline.
@@ -173,3 +175,4 @@ git remote add origin <YOUR_GIT_REPO_URL>
 git branch -M main
 git push -u origin main
 ```
+

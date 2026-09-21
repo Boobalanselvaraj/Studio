@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const prisma = require('../config/prisma');
 const env = require('../config/env');
+const { deliverAsset } = require('../services/mediaAccess');
 const { publishToQueue } = require('../config/rabbitmq');
 
 const SUPPORTED_MEDIA_EXTS = new Set([
@@ -42,95 +43,6 @@ function getStorageStudiosPath() {
   return candidates[0];
 }
 
-async function scanStudioStorage(studioId) {
-  try {
-    const rootPath = getStorageStudiosPath();
-    if (!fs.existsSync(rootPath)) {
-      return { foldersCount: 0, assetsCount: 0 };
-    }
-
-    const entries = fs.readdirSync(rootPath, { withFileTypes: true });
-    let totalAssets = 0;
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const folderName = entry.name;
-        const folderFullPath = path.join(rootPath, folderName);
-
-        // Upsert Folder
-        let folder = await prisma.folders.findFirst({
-          where: { studio_id: studioId, name: folderName, parent_folder_id: null },
-        });
-
-        if (!folder) {
-          folder = await prisma.folders.create({
-            data: {
-              studio_id: studioId,
-              name: folderName,
-              color: '#3B82F6',
-            },
-          });
-        }
-
-        // Scan files inside folder
-        const files = fs.readdirSync(folderFullPath, { withFileTypes: true });
-        for (const file of files) {
-          if (file.isFile()) {
-            const ext = path.extname(file.name).toLowerCase();
-            if (SUPPORTED_MEDIA_EXTS.has(ext)) {
-              const fileFullPath = path.join(folderFullPath, file.name);
-              const stat = fs.statSync(fileFullPath);
-              const relPath = path.relative(process.cwd(), fileFullPath).replace(/\\/g, '/');
-
-              let asset = await prisma.assets.findFirst({
-                where: { studio_id: studioId, original_path: relPath },
-              });
-
-              if (!asset) {
-                asset = await prisma.assets.create({
-                  data: {
-                    studio_id: studioId,
-                    filename: file.name,
-                    original_path: relPath,
-                    mime_type: getMimeType(file.name),
-                    file_size_bytes: BigInt(stat.size),
-                  },
-                });
-              }
-
-              // Ensure folder item relation
-              const existingLink = await prisma.folder_items.findFirst({
-                where: {
-                  folder_id: folder.id,
-                  item_type: 'asset',
-                  item_id: asset.id,
-                },
-              });
-
-              if (!existingLink) {
-                await prisma.folder_items.create({
-                  data: {
-                    folder_id: folder.id,
-                    item_type: 'asset',
-                    item_id: asset.id,
-                  },
-                });
-              }
-
-              totalAssets++;
-            }
-          }
-        }
-      }
-    }
-
-    return { foldersCount: entries.filter((e) => e.isDirectory()).length, assetsCount: totalAssets };
-  } catch (err) {
-    console.warn('[Storage Scan Error]:', err.message);
-    return { error: err.message };
-  }
-}
-
 function buildHierarchy(folders, parentId = null) {
   return folders
     .filter((f) => f.parent_folder_id === parentId)
@@ -143,7 +55,7 @@ function buildHierarchy(folders, parentId = null) {
 async function getTree(req, res, next) {
   try {
     // Run auto storage scan so new camera shots appear immediately
-    await scanStudioStorage(req.studioId);
+
 
     const flatFolders = await prisma.folders.findMany({
       where: { studio_id: req.studioId },
@@ -211,11 +123,7 @@ async function getTree(req, res, next) {
 
 async function syncStorage(req, res, next) {
   try {
-    const result = await scanStudioStorage(req.studioId);
-    res.json({
-      message: 'Studio storage successfully scanned and indexed',
-      ...result,
-    });
+    res.status(409).json({ error: 'Use an assigned camera upload profile. Unmapped folders cannot be imported safely.' });
   } catch (err) {
     next(err);
   }
@@ -235,19 +143,7 @@ async function serveAsset(req, res, next) {
       return res.status(404).json({ error: 'Asset not found' });
     }
 
-    let filePath = path.resolve(process.cwd(), asset.original_path);
-    if (!fs.existsSync(filePath)) {
-      // Try root workspace path
-      filePath = path.resolve(process.cwd(), '../../', asset.original_path);
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Physical media file missing from disk' });
-    }
-
-    res.setHeader('Content-Type', asset.mime_type || getMimeType(asset.filename));
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.sendFile(filePath);
+    return await deliverAsset(asset, req, res);
   } catch (err) {
     next(err);
   }
@@ -489,32 +385,6 @@ async function publishGallery(req, res, next) {
         },
         update: {
           sort_order: i,
-        },
-      });
-    }
-
-    // Link to all studio customers so they can view it in their portal
-    const customers = await prisma.customers.findMany({
-      where: { studio_id: req.studioId },
-    });
-
-    for (const cust of customers) {
-      await prisma.album_customers.upsert({
-        where: {
-          album_id_customer_id: {
-            album_id: album.id,
-            customer_id: cust.id,
-          },
-        },
-        create: {
-          album_id: album.id,
-          customer_id: cust.id,
-          can_download: true,
-          can_favorite: true,
-        },
-        update: {
-          can_download: true,
-          can_favorite: true,
         },
       });
     }

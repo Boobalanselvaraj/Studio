@@ -15,13 +15,17 @@ import {
   Camera,
   X,
   FileImage,
+  Share2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageHeading, Photo } from '../../../components/workspace/shared';
 import { photos } from '../../../data/workspace';
 import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
-import { foldersApi } from '../../../api/services';
+import { Select } from '../../../components/ui/select';
+import { foldersApi, sharesApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
 
 export function FoldersPage() {
@@ -38,6 +42,32 @@ export function FoldersPage() {
   const [parentFolderId, setParentFolderId] = useState('');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const [shareModal, setShareModal] = useState(false);
+  const [shareExpiresHours, setShareExpiresHours] = useState(72);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreatePublicLink = async (folder) => {
+    try {
+      setShareBusy(true);
+      setGeneratedShareUrl('');
+      setShareModal(true);
+      const pubRes = await foldersApi.publishGallery(folder.id);
+      const albumId = pubRes.album_id;
+      const shareRes = await sharesApi.createShare({
+        album_id: albumId,
+        expires_in_hours: shareExpiresHours,
+      });
+      setGeneratedShareUrl(shareRes.share_url);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to create guest share link');
+      setShareModal(false);
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   const loadTree = async () => {
     try {
@@ -61,10 +91,9 @@ export function FoldersPage() {
   const handleSyncStorage = async () => {
     try {
       setSyncing(true);
-      await foldersApi.syncStorage();
       await loadTree();
     } catch (err) {
-      console.error('Storage sync error:', err);
+      console.error('Refresh error:', err);
     } finally {
       setSyncing(false);
     }
@@ -323,6 +352,15 @@ export function FoldersPage() {
                     <ArrowUpRight size={14} className="mr-1 text-brand-primary" />
                     Publish to Client Gallery
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleCreatePublicLink(selectedFolder)}
+                    disabled={shareBusy}
+                  >
+                    <Share2 size={14} className="mr-1 text-brand-primary" />
+                    Share Guest Link
+                  </Button>
                   <Link className="button-primary text-xs flex items-center gap-1 py-1.5 px-3 rounded-lg" to="/customer/galleries">
                     View in Client Portal
                     <ArrowUpRight size={13} />
@@ -448,17 +486,20 @@ export function FoldersPage() {
 
           <label>
             Parent Folder (optional)
-            <select
+            <Select
               value={parentFolderId}
               onChange={(e) => setParentFolderId(e.target.value)}
-            >
-              <option value="">Root (No Parent)</option>
-              {allFolders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Root folder (No parent)…"
+              searchable={allFolders.length >= 3}
+              options={[
+                { value: '', label: '📁 Root (No Parent Directory)', description: 'Create as a top-level workspace album' },
+                ...allFolders.map((f) => ({
+                  value: f.id,
+                  label: `📁 ${f.name}`,
+                  description: `Path: /${f.name}`,
+                })),
+              ]}
+            />
           </label>
 
           <label>
@@ -492,6 +533,76 @@ export function FoldersPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Share Guest Link Modal */}
+      <Modal
+        open={shareModal}
+        onOpenChange={(v) => {
+          setShareModal(v);
+          if (!v) {
+            setGeneratedShareUrl('');
+            setCopied(false);
+          }
+        }}
+        title="Public Guest Gallery Link"
+        description="Generate an expiring, view-only guest link for clients and guests without requiring login."
+      >
+        <div className="space-y-4">
+          <label>
+            Link Expiration Duration
+            <Select
+              value={String(shareExpiresHours)}
+              onChange={(e) => setShareExpiresHours(Number(e.target.value))}
+              disabled={!!generatedShareUrl}
+              options={[
+                { value: '24', label: '24 Hours (1 Day)', description: 'Quick sharing for immediate proofing' },
+                { value: '72', label: '72 Hours (3 Days - Recommended)', description: 'Standard weekend client review window' },
+                { value: '168', label: '7 Days (1 Week)', description: 'Extended guest access window' },
+                { value: '720', label: '30 Days (1 Month)', description: 'Long term gallery access' },
+              ]}
+            />
+          </label>
+
+          {shareBusy ? (
+            <div className="py-6 flex items-center justify-center gap-2 text-muted text-xs">
+              <Loader2 size={16} className="animate-spin text-brand-primary" />
+              Generating secure guest link…
+            </div>
+          ) : generatedShareUrl ? (
+            <div className="space-y-3 pt-2">
+              <label className="text-xs text-muted">Guest Link (View-Only)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  className="font-mono text-xs flex-1 bg-surface-2 p-2 rounded border border-border"
+                  value={generatedShareUrl}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedShareUrl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? <Check size={14} className="mr-1" /> : <Copy size={14} className="mr-1" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted">
+                Guests can view high-resolution photos and receive live real-time updates. Original file downloads and account access are blocked.
+              </p>
+            </div>
+          ) : (
+            <div className="flex justify-end pt-2">
+              <Button onClick={() => selectedFolder && handleCreatePublicLink(selectedFolder)}>
+                Generate Link
+              </Button>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

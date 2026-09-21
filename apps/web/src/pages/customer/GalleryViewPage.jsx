@@ -74,7 +74,7 @@ export function GalleryViewPage() {
 
     try {
       // Connect to SSE stream
-      eventSource = new EventSource('/api/customer/albums/live-stream');
+      eventSource = new EventSource(`/api/customer/albums/live-stream?album_id=${albumId}`);
 
       eventSource.onopen = () => {
         setIsLiveConnected(true);
@@ -83,7 +83,12 @@ export function GalleryViewPage() {
       eventSource.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.event === 'new_photo' && data.asset) {
+          if (data.event === 'refresh') {
+            fetchCollectionData(true);
+            setNewShotNotification('📷 Live shoot update received');
+            if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
+            notificationTimerRef.current = setTimeout(() => setNewShotNotification(null), 4000);
+          } else if (data.event === 'new_photo' && data.asset) {
             // New photo shot detected on camera!
             const newAssetItem = {
               id: data.asset.id,

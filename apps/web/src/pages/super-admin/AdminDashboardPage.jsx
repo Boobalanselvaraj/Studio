@@ -4,12 +4,30 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Modal } from '../../components/ui/modal';
-import { Building2, Plus, Users, HardDrive, Loader2, Edit2, KeyRound, CheckCircle2, Copy, ArrowRight, UserCheck } from 'lucide-react';
+import { Select } from '../../components/ui/select';
+import {
+  Building2,
+  Plus,
+  Users,
+  HardDrive,
+  Camera,
+  Loader2,
+  Edit2,
+  KeyRound,
+  CheckCircle2,
+  Copy,
+  ArrowRight,
+  UserCheck,
+  Check,
+  X,
+  Inbox,
+} from 'lucide-react';
 import { adminApi } from '../../api/services';
 
 export function AdminDashboardPage() {
   const [studios, setStudios] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [createModal, setCreateModal] = useState(false);
@@ -26,6 +44,7 @@ export function AdminDashboardPage() {
   const [slug, setSlug] = useState('');
   const [subdomain, setSubdomain] = useState('');
   const [quotaGb, setQuotaGb] = useState(100);
+  const [cameraLimit, setCameraLimit] = useState(5);
   const [billingPlanId, setBillingPlanId] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
@@ -33,14 +52,16 @@ export function AdminDashboardPage() {
 
   // Manage studio form
   const [editQuotaGb, setEditQuotaGb] = useState(100);
+  const [editCameraLimit, setEditCameraLimit] = useState(5);
   const [editStatus, setEditStatus] = useState('active');
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [studiosData, plansData] = await Promise.allSettled([
+      const [studiosData, plansData, requestsData] = await Promise.allSettled([
         adminApi.listStudios(),
         adminApi.getBillingPlans(),
+        adminApi.listAllocationRequests(),
       ]);
 
       if (studiosData.status === 'fulfilled' && Array.isArray(studiosData.value)) {
@@ -51,6 +72,9 @@ export function AdminDashboardPage() {
         if (plansData.value.length > 0 && !billingPlanId) {
           setBillingPlanId(plansData.value[0].id);
         }
+      }
+      if (requestsData.status === 'fulfilled' && Array.isArray(requestsData.value)) {
+        setRequests(requestsData.value);
       }
     } catch (err) {
       console.warn('Admin load fallback:', err);
@@ -73,6 +97,7 @@ export function AdminDashboardPage() {
         slug: slug.trim().toLowerCase(),
         subdomain: subdomain.trim() || undefined,
         storage_quota_gb: Number(quotaGb),
+        camera_limit: Number(cameraLimit),
         billing_plan_id: billingPlanId || undefined,
         owner_name: ownerName.trim() || `${name.trim()} Owner`,
         owner_email: ownerEmail.trim().toLowerCase() || `owner@${slug.trim().toLowerCase()}.com`,
@@ -106,6 +131,7 @@ export function AdminDashboardPage() {
       setError('');
       await adminApi.updateStudioBilling(selectedStudio.id, {
         storage_quota_gb: Number(editQuotaGb),
+        camera_limit: Number(editCameraLimit),
         billing_status: editStatus,
       });
 
@@ -118,25 +144,86 @@ export function AdminDashboardPage() {
     }
   };
 
+  const handleResolveRequest = async (requestId, status) => {
+    try {
+      await adminApi.resolveAllocationRequest(requestId, { status, apply_quota: true });
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to resolve request');
+    }
+  };
+
   const openManage = (studio) => {
     setSelectedStudio(studio);
     setEditQuotaGb(studio.studio_billing_profile?.storage_quota_gb || 50);
+    setEditCameraLimit(studio.studio_billing_profile?.camera_limit ?? 5);
     setEditStatus(studio.studio_billing_profile?.billing_status || 'active');
     setManageModal(true);
   };
+
+  const pendingRequests = requests.filter((r) => r.status === 'pending');
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Studios Directory</h2>
-          <p className="text-sm text-muted">Platform super-admin console for provisioning studio tenants.</p>
+          <p className="text-sm text-muted">Platform super-admin console for provisioning studio tenants and authoritative resource limits.</p>
         </div>
 
         <Button onClick={() => setCreateModal(true)} className="flex items-center gap-2">
           <Plus className="w-4 h-4" /> Provision New Studio
         </Button>
       </div>
+
+      {/* Pending Allocation Requests Panel */}
+      {pendingRequests.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-800 dark:text-amber-200">
+              <Inbox size={16} /> Pending Quota Allocation Requests ({pendingRequests.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className="space-y-2">
+              {pendingRequests.map((req) => (
+                <div
+                  key={req.id}
+                  className="flex items-center justify-between bg-surface-1 p-3 rounded-lg border border-border text-xs"
+                >
+                  <div>
+                    <span className="font-semibold text-foreground">
+                      {req.studio?.name || 'Studio'}
+                    </span>
+                    <span className="text-muted ml-2">
+                      requested upgrade to <strong className="text-foreground">{req.requested_quota_gb} GB</strong>
+                    </span>
+                    {req.notes && <p className="text-muted text-[11px] mt-0.5">Note: "{req.notes}"</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-green-600 hover:text-green-700 h-7 text-xs flex items-center gap-1"
+                      onClick={() => handleResolveRequest(req.id, 'approved')}
+                    >
+                      <Check size={12} /> Approve & Apply
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700 h-7 text-xs flex items-center gap-1"
+                      onClick={() => handleResolveRequest(req.id, 'rejected')}
+                    >
+                      <X size={12} /> Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center items-center py-20 text-muted">
@@ -154,10 +241,10 @@ export function AdminDashboardPage() {
                 <TableRow>
                   <TableHead>Studio Name</TableHead>
                   <TableHead>Owner Account</TableHead>
-                  <TableHead>Slug / Subdomain</TableHead>
+                  <TableHead>Slug</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Storage Quota</TableHead>
-                  <TableHead>Live Counts</TableHead>
+                  <TableHead>Cameras Limit</TableHead>
                   <TableHead>Billing Plan</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -165,9 +252,12 @@ export function AdminDashboardPage() {
               <TableBody>
                 {studios.map((s) => {
                   const quota = s.studio_billing_profile?.storage_quota_gb || 50;
+                  const camLimit = s.studio_billing_profile?.camera_limit ?? 5;
                   const plan = s.studio_billing_profile?.billing_plan?.name || 'Custom';
                   const billingStatus = s.studio_billing_profile?.billing_status || 'active';
                   const owner = s.studio_users?.find((su) => su.role === 'studio_owner')?.user;
+                  const usedGb = s.liveMetrics?.platformUsedGb || 0;
+                  const reservedCams = s.liveMetrics?.reservedCameras || s._count?.cameras || 0;
 
                   return (
                     <TableRow key={s.id}>
@@ -192,9 +282,11 @@ export function AdminDashboardPage() {
                           {billingStatus}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs">{quota} GB</TableCell>
-                      <TableCell className="text-xs text-muted">
-                        {s._count?.events || 0} shoots · {s._count?.customers || 0} clients · {s._count?.cameras || 0} cams
+                      <TableCell className="text-xs">
+                        <span className="font-medium">{usedGb}</span> / {quota} GB
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="font-medium">{reservedCams}</span> / {camLimit} slots
                       </TableCell>
                       <TableCell className="text-xs">{plan}</TableCell>
                       <TableCell className="text-right">
@@ -203,7 +295,7 @@ export function AdminDashboardPage() {
                           variant="outline"
                           onClick={() => openManage(s)}
                         >
-                          <Edit2 size={12} className="mr-1" /> Manage
+                          <Edit2 size={12} className="mr-1" /> Allocations
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -231,7 +323,7 @@ export function AdminDashboardPage() {
           if (!v) setError('');
         }}
         title="Provision New Studio Tenant"
-        description="Creates a new studio tenant along with its dedicated Studio Owner login credentials."
+        description="Creates a new studio tenant along with its dedicated Studio Owner login credentials and resource limits."
       >
         <form className="form-stack" onSubmit={handleCreate}>
           {error && <p className="form-error">{error}</p>}
@@ -284,7 +376,7 @@ export function AdminDashboardPage() {
               Storage Quota (GB)
               <input
                 type="number"
-                min={10}
+                min={0}
                 required
                 value={quotaGb}
                 onChange={(e) => setQuotaGb(e.target.value)}
@@ -292,19 +384,30 @@ export function AdminDashboardPage() {
             </label>
 
             <label>
-              Billing Plan Tier
-              <select
-                value={billingPlanId}
-                onChange={(e) => setBillingPlanId(e.target.value)}
-              >
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (₹{p.price_per_month}/mo)
-                  </option>
-                ))}
-              </select>
+              Camera Slot Limit
+              <input
+                type="number"
+                min={1}
+                required
+                value={cameraLimit}
+                onChange={(e) => setCameraLimit(e.target.value)}
+              />
             </label>
           </div>
+
+          <label>
+            Billing Plan Tier
+            <Select
+              value={billingPlanId}
+              onChange={(e) => setBillingPlanId(e.target.value)}
+              placeholder="Select billing plan…"
+              options={plans.map((p) => ({
+                value: p.id,
+                label: p.name,
+                description: `${p.currency === 'USD' ? '$' : '₹'}${p.price_per_month}/mo · Up to ${p.storage_gb_max || p.storage_quota_gb || 50} GB Storage`,
+              }))}
+            />
+          </label>
 
           <h3 className="text-xs font-bold uppercase tracking-wider text-muted mt-3">2. Studio Owner Login Credentials</h3>
 
@@ -429,34 +532,69 @@ export function AdminDashboardPage() {
           setManageModal(v);
           if (!v) setError('');
         }}
-        title={`Manage ${selectedStudio?.name || 'Studio'}`}
-        description="Update storage limits and billing account status for this tenant."
+        title={`Authoritative Allocations — ${selectedStudio?.name || 'Studio'}`}
+        description="Update platform storage quota, camera limits, and account status."
       >
         <form className="form-stack" onSubmit={handleManageSubmit}>
           {error && <p className="form-error">{error}</p>}
 
-          <label>
-            Allocated Storage Quota (GB)
-            <input
-              type="number"
-              min={10}
-              required
-              value={editQuotaGb}
-              onChange={(e) => setEditQuotaGb(e.target.value)}
-            />
-          </label>
+          <div className="form-grid">
+            <label>
+              Storage Quota (GB)
+              <input
+                type="number"
+                min={0}
+                required
+                value={editQuotaGb}
+                onChange={(e) => setEditQuotaGb(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Camera Slot Limit
+              <input
+                type="number"
+                min={1}
+                required
+                value={editCameraLimit}
+                onChange={(e) => setEditCameraLimit(e.target.value)}
+              />
+            </label>
+          </div>
 
           <label>
             Account Billing Status
-            <select
+            <Select
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value)}
-            >
-              <option value="active">Active</option>
-              <option value="past_due">Past Due</option>
-              <option value="suspended">Suspended</option>
-              <option value="comped">Comped (Free Tier)</option>
-            </select>
+              searchable={true}
+              options={[
+                {
+                  value: 'active',
+                  label: 'Active (Full Access)',
+                  description: 'Normal studio operation with full storage & live ingest access',
+                  badge: 'pill-emerald',
+                },
+                {
+                  value: 'past_due',
+                  label: 'Past Due (Warning Notice)',
+                  description: 'Payment grace period with billing warning banner shown to studio',
+                  badge: 'pill-amber',
+                },
+                {
+                  value: 'suspended',
+                  label: 'Suspended (Blocks Ingest & New Shares)',
+                  description: 'Locked write access; historical shares remain read-only',
+                  badge: 'pill-rose',
+                },
+                {
+                  value: 'comped',
+                  label: 'Comped (Free Tier)',
+                  description: 'Special administrative or promotional waiver without billing charges',
+                  badge: 'pill-purple',
+                },
+              ]}
+            />
           </label>
 
           <div className="modal-actions">
@@ -469,7 +607,7 @@ export function AdminDashboardPage() {
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : 'Save Changes'}
+              {busy ? <Loader2 size={16} className="animate-spin" /> : 'Save Allocations'}
             </Button>
           </div>
         </form>
@@ -477,3 +615,5 @@ export function AdminDashboardPage() {
     </div>
   );
 }
+
+export default AdminDashboardPage;

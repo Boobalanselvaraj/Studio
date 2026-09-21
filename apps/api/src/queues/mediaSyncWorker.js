@@ -36,11 +36,16 @@ async function indexAsset(payload) {
     throw new Error('Asset not found for studio');
   }
 
+  const data = {
+    immich_asset_id: payload.immichAssetId || payload.immich_asset_id || null,
+  };
+  if (payload.processing_state) {
+    data.processing_state = payload.processing_state;
+  }
+
   return prisma.assets.update({
     where: { id: assetId },
-    data: {
-      immich_asset_id: payload.immichAssetId || payload.immich_asset_id || null,
-    },
+    data,
   });
 }
 
@@ -73,6 +78,7 @@ async function recordSftpUpload(payload) {
       original_path: originalPath,
       mime_type: mimeType || null,
       file_size_bytes: BigInt(fileSizeBytes || 0),
+      processing_state: 'ready',
     },
   });
 
