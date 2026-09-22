@@ -155,26 +155,7 @@ export function GalleryViewPage() {
     );
   }
 
-  const sampleImages =
-    albumId === 'smith-wedding-album'
-      ? [
-          photos.wedding,
-          photos.portrait,
-          photos.landscape,
-          photos.wedding,
-          photos.editorial,
-          photos.portrait,
-        ]
-      : [photos.landscape, photos.portrait, photos.landscape, photos.editorial];
-
-  const displayAssets =
-    assets.length > 0
-      ? assets
-      : sampleImages.map((url, i) => ({
-          id: `${albumId}-${i}`,
-          filename: `Moment ${String(i + 1).padStart(2, '0')}`,
-          thumbnailUrl: url,
-        }));
+  const displayAssets = assets;
 
   const subtitle =
     collection.subtitle ||

@@ -15,6 +15,7 @@ router.post('/task-templates', requireStudioRole(['studio_owner', 'studio_manage
 
 router.get('/:id', eventController.getById);
 router.patch('/:id', requireStudioRole(['studio_owner', 'studio_manager']), eventController.update);
+router.delete('/:id', requireStudioRole(['studio_owner', 'studio_manager']), eventController.delete);
 router.post('/:id/status', eventController.updateStatus);
 router.get('/:id/history', eventController.getHistory);
 

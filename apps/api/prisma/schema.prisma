@@ -199,6 +199,7 @@ model storage_providers {
   studio                  studios                   @relation(fields: [studio_id], references: [id], onDelete: Cascade)
   storage_credentials     storage_credentials?
   assets                  assets[]
+  cameras cameras[]
   storage_usage_snapshots storage_usage_snapshots[]
 
   @@map("storage_providers")
@@ -232,6 +233,8 @@ model cameras {
 
   studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
 
+  storage_provider storage_providers? @relation(fields: [storage_provider_id], references: [id], onDelete: SetNull)
+  album_id String? @db.Uuid
   @@map("cameras")
 }
 

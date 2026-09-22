@@ -198,6 +198,7 @@ async function getPublicShare(req, res, next) {
           mime_type: aa.asset.mime_type,
           file_size_bytes: aa.asset.file_size_bytes.toString(),
           thumbnailUrl: `/api/public/shares/${token}/assets/${aa.asset.id}/view`,
+          downloadUrl: `/api/public/shares/${token}/assets/${aa.asset.id}/view?download=true`,
           created_at: aa.asset.created_at,
         }));
 

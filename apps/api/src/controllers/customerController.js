@@ -40,14 +40,31 @@ async function listStudioCustomers(req, res, next) {
         event_customers: {
           include: {
             event: {
-              select: { id: true, title: true, status: true },
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                event_date_start: true,
+                albums: {
+                  select: {
+                    id: true,
+                    title: true,
+                    _count: { select: { album_assets: true } },
+                  },
+                },
+              },
             },
           },
         },
         album_customers: {
           include: {
             album: {
-              select: { id: true, title: true, is_published: true },
+              select: {
+                id: true,
+                title: true,
+                is_published: true,
+                _count: { select: { album_assets: true } },
+              },
             },
           },
         },
@@ -55,23 +72,101 @@ async function listStudioCustomers(req, res, next) {
       orderBy: { created_at: 'desc' },
     });
 
-    const formatted = customers.map((c) => ({
-      id: c.id,
-      studio_id: c.studio_id,
-      user_id: c.user_id,
-      email: c.user.email,
-      full_name: c.user.full_name,
-      phone: c.user.phone,
-      address: c.address,
-      notes: c.notes,
-      total_events: c.event_customers.length,
-      total_albums: c.album_customers.length,
-      events: c.event_customers.map((ec) => ec.event),
-      albums: c.album_customers.map((ac) => ac.album),
-      created_at: c.created_at,
-    }));
+    const formatted = customers.map((c) => {
+      const albums = c.album_customers.map((ac) => ({
+        id: ac.album.id,
+        title: ac.album.title,
+        is_published: ac.album.is_published,
+        can_download: ac.can_download,
+        can_favorite: ac.can_favorite,
+        assets_count: ac.album._count?.album_assets || 0,
+      }));
+      const totalPhotos = albums.reduce((acc, a) => acc + (a.assets_count || 0), 0);
+
+      return {
+        id: c.id,
+        studio_id: c.studio_id,
+        user_id: c.user_id,
+        email: c.user.email,
+        full_name: c.user.full_name,
+        phone: c.user.phone,
+        address: c.address,
+        notes: c.notes,
+        total_events: c.event_customers.length,
+        total_albums: c.album_customers.length,
+        total_photos: totalPhotos,
+        events: c.event_customers.map((ec) => ec.event),
+        albums,
+        created_at: c.created_at,
+      };
+    });
 
     res.json(formatted);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCustomer(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { full_name, phone, address, notes } = req.body;
+    const customer = await prisma.customers.findFirst({
+      where: { id, studio_id: req.studioId },
+      include: { user: true },
+    });
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    if (full_name !== undefined || phone !== undefined) {
+      await prisma.users.update({
+        where: { id: customer.user_id },
+        data: {
+          ...(full_name ? { full_name: full_name.trim() } : {}),
+          ...(phone !== undefined ? { phone: phone ? phone.trim() : null } : {}),
+        },
+      });
+    }
+    const updated = await prisma.customers.update({
+      where: { id },
+      data: {
+        ...(address !== undefined ? { address } : {}),
+        ...(notes !== undefined ? { notes } : {}),
+      },
+      include: { user: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteCustomer(req, res, next) {
+  try {
+    const { id } = req.params;
+    await prisma.customers.deleteMany({
+      where: { id, studio_id: req.studioId },
+    });
+    res.json({ message: 'Customer removed successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function unshareAlbum(req, res, next) {
+  try {
+    const { album_id, customer_id } = req.body;
+    if (!album_id || !customer_id) {
+      return res.status(400).json({ error: 'album_id and customer_id are required' });
+    }
+    await prisma.album_customers.deleteMany({
+      where: {
+        album_id,
+        customer_id,
+        album: { studio_id: req.studioId },
+      },
+    });
+    res.json({ message: 'Album unshared from customer' });
   } catch (err) {
     next(err);
   }
@@ -90,13 +185,15 @@ async function createCustomer(req, res, next) {
       return res.status(400).json({ error: 'Studio context required' });
     }
 
+    let temporaryPassword;
     let user = await prisma.users.findUnique({
       where: { email: normalizedEmail },
     });
 
     if (!user) {
       const salt = await bcrypt.genSalt(10);
-      const password_hash = await bcrypt.hash('customer123456', salt);
+      temporaryPassword=require('crypto').randomBytes(18).toString('base64url');
+      const password_hash = await bcrypt.hash(temporaryPassword, salt);
       user = await prisma.users.create({
         data: {
           email: normalizedEmail,
@@ -155,6 +252,7 @@ async function createCustomer(req, res, next) {
     });
 
     res.status(201).json({
+      temporary_password: temporaryPassword,
       id: customer.id,
       studio_id: customer.studio_id,
       user_id: customer.user_id,
@@ -301,6 +399,10 @@ async function serveCustomerAsset(req, res, next) {
       where: { id: assetId, is_soft_deleted: false, album_assets: { some: { album: albumAccessWhere(req.user.id) } } },
     });
     if (!asset) return res.status(404).json({ error: 'Media not found' });
+    if(req.query.download==='true') {
+      const grant=await prisma.album_customers.findFirst({where:{can_download:true,customer:{user_id:req.user.id},album:{is_published:true,album_assets:{some:{asset_id:asset.id}}}}});
+      if(!grant)return res.status(403).json({error:'Downloads are disabled for this gallery'});
+    }
     return await deliverAsset(asset, req, res);
   } catch (err) {
     next(err);
@@ -365,11 +467,102 @@ async function shareAlbum(req, res, next) {
   }
 }
 
+async function downloadAsset(req, res, next) {
+  try {
+    const { assetId } = req.params;
+    const asset = await prisma.assets.findFirst({
+      where: { id: assetId, is_soft_deleted: false, album_assets: { some: { album: albumAccessWhere(req.user.id) } } },
+    });
+    if (!asset) return res.status(404).json({ error: 'Media not found or download unauthorized' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
+    return await deliverAsset(asset, req, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function downloadAlbumZip(req, res, next) {
+  try {
+    const { albumId } = req.params;
+    const album = await prisma.albums.findFirst({
+      where: { id: albumId, ...albumAccessWhere(req.user.id), album_customers:{some:{can_download:true,customer:{user_id:req.user.id}}} },
+      include: {
+        album_assets: { include: { asset: true } },
+      },
+    });
+
+    if (!album) {
+      return res.status(404).json({ error: 'Album not found or download unauthorized' });
+    }
+
+    const archiver = require('archiver');
+    const zip = archiver('zip', { zlib: { level: 5 } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${album.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_photos.zip"`);
+
+    zip.on('error', error => res.destroy(error));
+    res.on('close', () => zip.abort());
+    zip.pipe(res);
+
+    for (const item of album.album_assets) {
+      if (item.asset && !item.asset.is_soft_deleted) {
+        const provider=await prisma.storage_providers.findFirst({where:{id:item.asset.storage_provider_id,studio_id:album.studio_id},include:{storage_credentials:true}});
+        if(!provider || !item.asset.object_key) throw new Error('Original is not available in configured storage');
+        const stream=await require('../services/storageAdapters').readObject(provider,item.asset.object_key);
+        stream.on('error', error=>zip.destroy(error));
+        zip.append(stream,{name:item.asset.id+'_'+require('path').basename(item.asset.filename)});
+      }
+    }
+
+    await zip.finalize();
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function toggleFavorite(req, res, next) {
+  try {
+    const { albumId, assetId } = req.params;
+    const { is_favorite } = req.body;
+
+    const albumAsset = await prisma.album_assets.findFirst({
+      where: {
+        album_id: albumId,
+        asset_id: assetId,
+        album: {...albumAccessWhere(req.user.id),album_customers:{some:{can_favorite:true,customer:{user_id:req.user.id}}}},
+      },
+    });
+
+    if (!albumAsset) {
+      return res.status(404).json({ error: 'Album photo not found or favorite unauthorized' });
+    }
+
+    const nextState = is_favorite !== undefined ? Boolean(is_favorite) : !albumAsset.is_favorite;
+
+    const updated = await prisma.album_assets.update({
+      where: { id: albumAsset.id },
+      data: { is_favorite: nextState },
+    });
+
+    res.json({ success: true, is_favorite: updated.is_favorite });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listStudioCustomers,
   createCustomer,
+  updateCustomer,
+  deleteCustomer,
   getMyGalleries,
   getAlbumById,
   serveCustomerAsset,
   shareAlbum,
+  unshareAlbum,
+  downloadAsset,
+  downloadAlbumZip,
+  toggleFavorite,
 };

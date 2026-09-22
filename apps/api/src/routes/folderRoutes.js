@@ -4,6 +4,8 @@ const folderController = require('../controllers/folderController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
 router.get('/tree', folderController.getTree);
+router.get('/server-explorer', folderController.getServerExplorerData);
+router.post('/batch-assign', requireStudioRole(['studio_owner', 'studio_manager', 'photographer']), folderController.batchAssignAssets);
 router.post('/sync-storage', folderController.syncStorage);
 router.get('/assets/:id/view', folderController.serveAsset);
 router.post('/', requireStudioRole(['studio_owner', 'studio_manager']), folderController.create);

@@ -11,6 +11,8 @@ COPY apps/api ./apps/api
 
 WORKDIR /usr/src/app/apps/api
 
+RUN npx prisma generate --schema=prisma/schema.prisma
+
 EXPOSE 4000
 
-CMD ["npm", "run", "dev"]
+CMD ["sh", "-c", "npx prisma generate --schema=prisma/schema.prisma && node src/server.js"]

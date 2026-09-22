@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config();
 
 module.exports = {
@@ -6,6 +9,7 @@ module.exports = {
   APP_URL: process.env.APP_URL || 'http://localhost:3000',
   API_URL: process.env.API_URL || 'http://localhost:4000/api',
 
+  INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY,
   // Secrets
   SESSION_SECRET: process.env.SESSION_SECRET || 'dev_session_secret_12345',
   JWT_SECRET: process.env.JWT_SECRET || 'dev_jwt_secret_12345',

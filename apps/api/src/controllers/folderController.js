@@ -422,8 +422,138 @@ async function deleteFolder(req, res, next) {
   }
 }
 
+async function getServerExplorerData(req, res, next) {
+  try {
+    const [assets, providers, cameras, albums, customers] = await Promise.all([
+      prisma.assets.findMany({
+        where: {
+          studio_id: req.studioId,
+          is_soft_deleted: false,
+        },
+        include: {
+          camera: { select: { id: true, name: true, model: true } },
+          storage_provider: { select: { id: true, name: true, backend: true } },
+          album_assets: {
+            include: {
+              album: { select: { id: true, title: true, is_published: true } },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.storage_providers.findMany({
+        where: { studio_id: req.studioId },
+        select: { id: true, name: true, backend: true, is_default: true, health: true },
+      }),
+      prisma.cameras.findMany({
+        where: { studio_id: req.studioId, lifecycle: { not: 'retired' } },
+        select: { id: true, name: true, model: true, is_active: true, last_sync_at: true },
+      }),
+      prisma.albums.findMany({
+        where: { studio_id: req.studioId },
+        select: { id: true, title: true, is_published: true },
+      }),
+      prisma.customers.findMany({
+        where: { studio_id: req.studioId },
+        include: { user: { select: { id: true, full_name: true, email: true } } },
+      }),
+    ]);
+
+    const formattedAssets = assets.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mime_type: a.mime_type,
+      file_size_bytes: a.file_size_bytes ? a.file_size_bytes.toString() : '0',
+      created_at: a.created_at,
+      original_path: a.original_path,
+      url: `/api/studio/folders/assets/${a.id}/view`,
+      camera: a.camera || null,
+      storage_provider: a.storage_provider || null,
+      albums: a.album_assets.map((aa) => aa.album),
+    }));
+
+    res.json({
+      assets: formattedAssets,
+      providers,
+      cameras,
+      albums,
+      customers: customers.map((c) => ({
+        id: c.id,
+        name: c.user?.full_name || 'Customer',
+        email: c.user?.email || '',
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function batchAssignAssets(req, res, next) {
+  try {
+    const { asset_ids, album_id, customer_id, new_album_title } = req.body;
+    if (!Array.isArray(asset_ids) || asset_ids.length === 0) {
+      return res.status(400).json({ error: 'asset_ids array is required' });
+    }
+
+    let targetAlbumId = album_id;
+    if (!targetAlbumId && new_album_title && new_album_title.trim()) {
+      const newAlbum = await prisma.albums.create({
+        data: {
+          studio_id: req.studioId,
+          title: new_album_title.trim(),
+          is_published: true,
+        },
+      });
+      targetAlbumId = newAlbum.id;
+    }
+
+    if (targetAlbumId) {
+      for (let i = 0; i < asset_ids.length; i++) {
+        await prisma.album_assets.upsert({
+          where: {
+            album_id_asset_id: {
+              album_id: targetAlbumId,
+              asset_id: asset_ids[i],
+            },
+          },
+          create: {
+            album_id: targetAlbumId,
+            asset_id: asset_ids[i],
+            sort_order: i,
+          },
+          update: {},
+        });
+      }
+    }
+
+    if (customer_id && targetAlbumId) {
+      await prisma.album_customers.upsert({
+        where: {
+          album_id_customer_id: {
+            album_id: targetAlbumId,
+            customer_id,
+          },
+        },
+        create: {
+          album_id: targetAlbumId,
+          customer_id,
+          can_download: true,
+          can_favorite: true,
+        },
+        update: {},
+      });
+    }
+
+    res.json({ success: true, message: `Assigned ${asset_ids.length} files successfully.` });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getTree,
+  getServerExplorerData,
+  batchAssignAssets,
   syncStorage,
   serveAsset,
   publishGallery,

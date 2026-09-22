@@ -18,11 +18,12 @@ function createApp(options = {}) {
     app.use(morgan('dev'));
   }
 
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow any requesting origin (localhost, LAN IP, remote) with credentials
-      callback(null, true);
+      const allowed=(process.env.CORS_ORIGINS || env.APP_URL).split(',');
+      callback(null,!origin || allowed.includes(origin));
     },
     credentials: true,
   }));

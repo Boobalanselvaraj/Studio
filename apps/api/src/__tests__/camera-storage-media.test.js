@@ -35,6 +35,8 @@ jest.mock('../config/prisma', () => ({
   $transaction: jest.fn(),
 }));
 
+jest.mock('../services/sftpgoService',()=>({provisionCameraUser:jest.fn().mockResolvedValue({status:'provisioned'}),setCameraActive:jest.fn(),retireCameraUser:jest.fn()}));
+
 jest.mock('../config/rabbitmq', () => ({
   connectRabbitMQ: jest.fn(),
   publishToQueue: jest.fn(),
@@ -82,6 +84,8 @@ describe('camera, storage, and media pipeline contracts', () => {
 
   it('hashes camera SFTP passwords before storing them', async () => {
     mockStudioUser('studio_owner');
+    prisma.storage_providers.findFirst.mockResolvedValue({id:'provider-1'});
+    prisma.cameras.update.mockResolvedValue({id:'camera-1',sftpgo_username:'lumina_cam_01',lifecycle:'ready',is_active:true});
     prisma.cameras.findUnique.mockResolvedValue(null);
     prisma.cameras.create.mockImplementation(async ({ data, select }) => ({
       id: 'camera-1',

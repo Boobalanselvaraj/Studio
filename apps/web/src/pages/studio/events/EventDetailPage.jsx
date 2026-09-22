@@ -13,11 +13,14 @@ import {
   History,
   User,
   Loader2,
+  Edit2,
 } from 'lucide-react';
 import { transitions, formatDate, photos } from '../../../data/workspace';
 import { PageHeading, Status, Photo } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
+import { ConfirmModal } from '../../../components/ui/ConfirmModal';
+import { toast } from '../../../components/ui/toast';
 import { eventsApi } from '../../../api/services';
 
 export function EventDetailPage() {
@@ -33,6 +36,20 @@ export function EventDetailPage() {
   const [statusModal, setStatusModal] = useState(false);
   const [targetStatus, setTargetStatus] = useState('');
   const [history, setHistory] = useState([]);
+
+  // Edit Event State
+  const [editModal, setEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editType, setEditType] = useState('wedding');
+  const [editDate, setEditDate] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+
+  // Delete Shoot State
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const loadEventDetails = async () => {
     try {
@@ -67,6 +84,53 @@ export function EventDetailPage() {
     setStatusModal(true);
   };
 
+  const openEditModal = () => {
+    if (!event) return;
+    setEditTitle(event.title || '');
+    setEditType(event.event_type || 'wedding');
+    setEditDate(event.event_date_start ? new Date(event.event_date_start).toISOString().slice(0, 16) : '');
+    setEditLocation(event.location || '');
+    setEditDeadline(event.delivery_deadline ? new Date(event.delivery_deadline).toISOString().slice(0, 10) : '');
+    setEditNotes(event.notes || '');
+    setEditModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setEditBusy(true);
+      const updated = await eventsApi.update(id, {
+        title: editTitle.trim(),
+        event_type: editType,
+        event_date_start: editDate ? new Date(editDate).toISOString() : null,
+        location: editLocation.trim() || null,
+        delivery_deadline: editDeadline ? new Date(editDeadline).toISOString() : null,
+        notes: editNotes.trim() || null,
+      });
+      setEvent((prev) => ({ ...prev, ...updated }));
+      setEditModal(false);
+      toast.success('Shoot details updated successfully');
+      loadEventDetails();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update shoot details');
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    try {
+      setDeleteBusy(true);
+      await eventsApi.delete(id);
+      toast.success('Shoot deleted successfully');
+      navigate('/studio/events');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete shoot');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const confirmStatusChange = async (e) => {
     e.preventDefault();
     if (!targetStatus) return;
@@ -79,9 +143,10 @@ export function EventDetailPage() {
       setEvent((prev) => ({ ...prev, status: updated.status }));
       setStatusModal(false);
       setStatusNote('');
+      toast.success(`Status updated to ${updated.status}`);
       loadEventDetails();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to update status transition');
+      toast.error(err.response?.data?.error || 'Failed to update status transition');
     }
   };
 
@@ -99,8 +164,9 @@ export function EventDetailPage() {
         event_tasks: [...(prev.event_tasks || []), created],
       }));
       setNewTaskTitle('');
+      toast.success('Task added');
     } catch (err) {
-      console.error('Failed to create task:', err);
+      toast.error(err.response?.data?.error || 'Failed to add task');
     } finally {
       setAddingTask(false);
     }
@@ -175,6 +241,24 @@ export function EventDetailPage() {
         description="The details behind a beautiful shoot."
       >
         <Status value={event.status} />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={openEditModal}
+          className="flex items-center gap-1.5 text-xs h-7"
+        >
+          <Edit2 size={12} /> Edit Shoot
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setDeleteModal(true)}
+          className="flex items-center gap-1.5 text-xs h-7 text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/30"
+        >
+          <Trash2 size={12} /> Delete Shoot
+        </Button>
 
         {allowedTransitions.length > 0 && (
           <select
@@ -383,6 +467,105 @@ export function EventDetailPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Edit Shoot Details Modal */}
+      <Modal
+        open={editModal}
+        onOpenChange={setEditModal}
+        title="Edit Shoot Details"
+        description="Update dates, shoot location, delivery deadline, and creative direction."
+      >
+        <form onSubmit={handleEditSubmit} className="form-stack">
+          <label>
+            Shoot Title
+            <input
+              required
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="e.g. Smith-Jones Wedding Ceremony"
+            />
+          </label>
+
+          <div className="form-grid">
+            <label>
+              Shoot Type
+              <select
+                className="w-full text-sm bg-surface border border-border rounded px-3 py-2"
+                value={editType}
+                onChange={(e) => setEditType(e.target.value)}
+              >
+                <option value="wedding">Wedding</option>
+                <option value="portrait">Portrait</option>
+                <option value="corporate">Corporate</option>
+                <option value="event">Event / Party</option>
+                <option value="product">Product</option>
+                <option value="family">Family</option>
+                <option value="fashion">Fashion</option>
+              </select>
+            </label>
+
+            <label>
+              Shoot Date & Time
+              <input
+                type="datetime-local"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="form-grid">
+            <label>
+              Shoot Location
+              <input
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="e.g. Grand Vista Resort, Hall A"
+              />
+            </label>
+
+            <label>
+              Final Delivery Deadline
+              <input
+                type="date"
+                value={editDeadline}
+                onChange={(e) => setEditDeadline(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <label>
+            Creative & Production Notes
+            <textarea
+              rows={3}
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder="Shot list, lighting requirements, client preferences…"
+            />
+          </label>
+
+          <div className="modal-actions">
+            <Button variant="outline" type="button" disabled={editBusy} onClick={() => setEditModal(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={editBusy}>
+              {editBusy ? <Loader2 size={16} className="animate-spin" /> : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Shoot Confirm Modal */}
+      <ConfirmModal
+        open={deleteModal}
+        onOpenChange={setDeleteModal}
+        title={`Delete shoot "${event?.title || ''}"?`}
+        description="Are you sure you want to permanently delete this shoot/event? This will remove all associated tasks, customer assignments, and shoot history. Photos in your library will not be deleted."
+        confirmText="Delete Shoot"
+        variant="danger"
+        loading={deleteBusy}
+        onConfirm={handleDeleteEvent}
+      />
     </div>
   );
 }

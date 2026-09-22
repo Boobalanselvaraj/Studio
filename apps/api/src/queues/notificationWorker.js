@@ -1,5 +1,6 @@
 const { connectRabbitMQ } = require('../config/rabbitmq');
 const prisma = require('../config/prisma');
+const emailService = require('../services/emailService');
 
 async function handleNotificationMessage(payload) {
   if (!payload.action) {
@@ -16,6 +17,16 @@ async function handleNotificationMessage(payload) {
       details: payload,
     },
   });
+
+  if (payload.action === 'gallery_shared' && payload.customerEmail) {
+    await emailService.sendGalleryShareEmail(payload).catch((err) => {
+      console.warn('[Notification Worker] Email share dispatch note:', err.message);
+    });
+  } else if (payload.action === 'status_changed' && payload.customerEmail) {
+    await emailService.sendShootStatusEmail(payload).catch((err) => {
+      console.warn('[Notification Worker] Email status dispatch note:', err.message);
+    });
+  }
 
   return { status: 'recorded' };
 }

@@ -1,28 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
-import { photos } from '../../data/workspace';
 import { Photo } from '../../components/workspace/shared';
 import { customerPortalApi } from '../../api/services';
 
-export const fallbackCollections = [
-  {
-    id: 'smith-wedding-album',
-    title: 'The beginning of always',
-    subtitle: 'Smith & Jones · Wedding collection',
-    date: 'September 2026',
-    cover: photos.wedding,
-    photo_count: 6,
-  },
-  {
-    id: 'smith-prewedding-album',
-    title: 'Somewhere, together',
-    subtitle: 'An escape into the mountains',
-    date: 'August 2026',
-    cover: photos.landscape,
-    photo_count: 4,
-  },
-];
+export const fallbackCollections = [];
 
 export function CustomerGalleriesPage() {
   const [galleries, setGalleries] = useState([]);
@@ -35,7 +17,7 @@ export function CustomerGalleriesPage() {
       if (Array.isArray(data) && data.length > 0) {
         setGalleries(data);
       } else {
-        setGalleries(fallbackCollections);
+        setGalleries([]);
       }
     } catch (err) {
       console.warn('Customer galleries fallback to demo collections:', err);
@@ -63,6 +45,7 @@ export function CustomerGalleriesPage() {
         </p>
       </div>
 
+      {!loading && galleries.length === 0 && <p role="status">No published galleries have been shared with this account.</p>}
       {loading ? (
         <div className="flex justify-center items-center py-20 text-muted">
           <Loader2 size={32} className="animate-spin text-brand-primary mr-3" />
@@ -73,8 +56,9 @@ export function CustomerGalleriesPage() {
           {galleries.map((g) => {
             const coverUrl =
               g.cover ||
+              g.cover_image_url ||
               g.assets?.[0]?.thumbnailUrl ||
-              photos.wedding;
+              '';
 
             const displayDate =
               g.date ||

@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
-const { provisionSftpgoUser } = require('../config/sftpgo');
-const { checkCameraLimit } = require('../services/allocationService');
+const sftpgoService = require('../services/sftpgoService');
+
 
 function formatCameraDTO(c) {
   return {
@@ -9,6 +9,7 @@ function formatCameraDTO(c) {
     studio_id: c.studio_id,
     name: c.name,
     model: c.model,
+    album_id: c.album_id,
     storage_provider_id: c.storage_provider_id,
     storage_provider: c.storage_provider
       ? {
@@ -57,7 +58,8 @@ async function create(req, res, next) {
     } = req.body;
 
     const username = (upload_username || sftpgo_username || '').trim();
-    const password = (upload_password || sftpgo_password || '').trim();
+    const password = upload_password || sftpgo_password || '';
+    if (!/^[a-zA-Z0-9_-]{3,60}$/.test(username) || typeof password !== 'string' || password.length < 8) return res.status(400).json({error:'Use a 3–60 character username containing letters, numbers, underscores or hyphens, and a password of at least 8 characters.'});
 
     if (!name || !username || !password) {
       return res.status(400).json({ error: 'Camera name, upload username, and password are required' });
@@ -74,28 +76,16 @@ async function create(req, res, next) {
       }
     }
 
-    // 1. Quota Enforcement: Verify studio has available camera slot
-    const quota = await checkCameraLimit(req.studioId);
-    if (!quota.allowed) {
-      return res.status(403).json({
-        error: `Camera limit of ${quota.limit} reached (${quota.reserved} slots reserved). Upgrade tier or retire inactive cameras.`,
-        code: 'CAMERA_LIMIT_REACHED',
-        limit: quota.limit,
-        reserved: quota.reserved,
-      });
-    }
-
-    // 2. Validate Storage Destination
+    // Storage Destination (optional: can link to an external server or remain direct)
     let destinationId = storage_provider_id;
     if (destinationId) {
       const dest = await prisma.storage_providers.findFirst({
         where: { id: destinationId, studio_id: req.studioId, is_enabled: true },
       });
       if (!dest) {
-        return res.status(400).json({ error: 'Selected storage connection does not belong to this studio or is disabled' });
+        destinationId = null;
       }
     } else {
-      // Find default or first enabled storage provider
       const defDest = await prisma.storage_providers.findFirst({
         where: { studio_id: req.studioId, is_enabled: true },
         orderBy: [{ is_default: 'desc' }, { created_at: 'asc' }],
@@ -118,7 +108,7 @@ async function create(req, res, next) {
         studio_id: req.studioId,
         name: name.trim(),
         model: model ? model.trim() : null,
-        storage_provider_id: destinationId,
+        storage_provider_id: destinationId || null,
         lifecycle: 'ready',
         operation_key: operation_key || null,
         sftpgo_username: username,
@@ -130,10 +120,17 @@ async function create(req, res, next) {
       },
     });
 
-    // Background gateway provisioning if available
-    provisionSftpgoUser(username, password).catch((err) => {
-      console.warn('[Camera] Background SFTPGo provisioning note:', err.message);
-    });
+    const studio = await prisma.studios.findUnique({ where: { id: req.studioId }, select: { slug: true } });
+    try {
+      await sftpgoService.provisionCameraUser({
+        username,
+        password,
+        studioSlug: studio ? studio.slug : 'studio',
+        cameraId: camera.id,
+      });
+    } catch (e) {
+      console.warn('[Camera] Provisioning note:', e.message);
+    }
 
     res.status(201).json(formatCameraDTO(camera));
   } catch (err) {
@@ -161,7 +158,9 @@ async function toggleActive(req, res, next) {
       return res.status(400).json({ error: 'Retired cameras cannot be re-enabled. Register a new camera slot.' });
     }
 
-    const nextActive = Boolean(is_active);
+    if (typeof is_active !== 'boolean') return res.status(400).json({error:'is_active must be a boolean'});
+    const nextActive = is_active;
+    await sftpgoService.setCameraActive({username:existing.sftpgo_username,active:nextActive});
     const camera = await prisma.cameras.update({
       where: { id: cameraId },
       data: {
@@ -172,6 +171,8 @@ async function toggleActive(req, res, next) {
         storage_provider: true,
       },
     });
+
+
 
     res.json(formatCameraDTO(camera));
   } catch (err) {
@@ -191,6 +192,7 @@ async function retire(req, res, next) {
       return res.status(404).json({ error: 'Camera not found' });
     }
 
+    await sftpgoService.retireCameraUser({username:existing.sftpgo_username});
     // Plan requirement: Retiring frees the slot permanently while preserving media provenance
     const retired = await prisma.cameras.update({
       where: { id: cameraId },
@@ -204,6 +206,8 @@ async function retire(req, res, next) {
       },
     });
 
+
+
     res.json({
       message: `Camera '${retired.name}' retired. Slot released. Associated assets and history are preserved.`,
       camera: formatCameraDTO(retired),
@@ -213,9 +217,51 @@ async function retire(req, res, next) {
   }
 }
 
+async function assignAlbum(req,res,next){try{
+ const camera=await prisma.cameras.findFirst({where:{id:req.params.id,studio_id:req.studioId}});
+ if(!camera)return res.status(404).json({error:'Camera not found'});
+ const albumId=req.body.album_id || null;
+ if(albumId && !await prisma.albums.findFirst({where:{id:albumId,studio_id:req.studioId}}))return res.status(400).json({error:'Album not found in this studio'});
+ const updated=await prisma.cameras.update({where:{id:camera.id},data:{album_id:albumId},include:{storage_provider:true}});
+ res.json(formatCameraDTO(updated));
+ }catch(error){next(error);}}
+async function deleteCamera(req, res, next) {
+  try {
+    const cameraId = req.params.id;
+    const existing = await prisma.cameras.findFirst({
+      where: { id: cameraId, studio_id: req.studioId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Camera not found' });
+    }
+
+    try {
+      await sftpgoService.deleteCameraUser({ username: existing.sftpgo_username });
+    } catch (e) {
+      console.warn('[Camera] Delete SFTPGo user warning:', e.message);
+    }
+
+    await prisma.assets.updateMany({
+      where: { camera_id: cameraId },
+      data: { camera_id: null },
+    });
+
+    await prisma.cameras.delete({
+      where: { id: cameraId },
+    });
+
+    res.json({ success: true, message: `Camera '${existing.name}' was permanently deleted and slot released.` });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  assignAlbum,
   list,
   create,
   toggleActive,
   retire,
+  delete: deleteCamera,
 };

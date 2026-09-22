@@ -1,5 +1,6 @@
 const { connectRabbitMQ } = require('../config/rabbitmq');
 const prisma = require('../config/prisma');
+const immichService = require('../services/immichService');
 
 async function handleMediaSyncMessage(payload) {
   if (payload.action === 'index_asset') {
@@ -24,20 +25,37 @@ async function indexAsset(payload) {
     throw new Error('index_asset requires assetId and studioId');
   }
 
-  const asset = await prisma.assets.findFirst({
+  const queryOptions = {
     where: {
       id: assetId,
       studio_id: payload.studioId,
     },
-    select: { id: true },
-  });
+  };
+
+  const hasExplicitImmichId = Boolean(payload.immichAssetId || payload.immich_asset_id);
+  if (hasExplicitImmichId) {
+    queryOptions.select = { id: true };
+  }
+
+  const asset = await prisma.assets.findFirst(queryOptions);
 
   if (!asset) {
     throw new Error('Asset not found for studio');
   }
 
+  let immichId = payload.immichAssetId || payload.immich_asset_id || asset.immich_asset_id;
+
+  if (!immichId) {
+    const res = await immichService.indexAssetInImmich({
+      assetId: asset.id,
+      originalPath: asset.original_path,
+      mimeType: asset.mime_type,
+    });
+    immichId = res.immich_asset_id;
+  }
+
   const data = {
-    immich_asset_id: payload.immichAssetId || payload.immich_asset_id || null,
+    immich_asset_id: immichId,
   };
   if (payload.processing_state) {
     data.processing_state = payload.processing_state;

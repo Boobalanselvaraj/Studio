@@ -50,3 +50,6 @@ redis-data/
 rabbitmq-data/
 sftpgo-data/
 immich-data/
+
+repair-backup-*/
+acceptance-credentials.json

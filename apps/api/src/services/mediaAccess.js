@@ -13,13 +13,18 @@ async function deliverAsset(asset, req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Type', asset.mime_type || 'application/octet-stream');
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(asset.filename)}"`);
+  } else {
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(asset.filename)}"`);
+  }
   if (asset.storage_provider_id && asset.object_key) {
     const { readObject } = require('./storageAdapters');
     const provider = await prisma.storage_providers.findFirst({ where: { id: asset.storage_provider_id, studio_id: asset.studio_id }, include: { storage_credentials: true } });
     if (!provider) return res.status(404).json({ error: 'Media not found' });
     const stream = await readObject(provider, asset.object_key);
     stream.on('error', () => res.destroy());
-    req.on('close', () => stream.destroy());
+    res.on('close', () => stream.destroy());
     return stream.pipe(res);
   }
   // Legacy originals must resolve inside the configured storage root, including symlinks.

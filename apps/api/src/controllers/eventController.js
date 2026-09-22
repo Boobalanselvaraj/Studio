@@ -104,6 +104,22 @@ async function create(req, res, next) {
         },
       });
 
+      // Auto-seed tasks from event task templates for this event_type
+      const templates = await tx.event_task_templates.findMany({
+        where: { studio_id: req.studioId, event_type },
+        orderBy: { sort_order: 'asc' },
+      });
+
+      if (templates.length > 0) {
+        await tx.event_tasks.createMany({
+          data: templates.map((tmpl) => ({
+            event_id: created.id,
+            title: tmpl.title,
+            is_done: false,
+          })),
+        });
+      }
+
       return created;
     });
 
@@ -331,6 +347,28 @@ async function getCalendar(req, res, next) {
   }
 }
 
+async function deleteEvent(req, res, next) {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.events.findFirst({
+      where: { id, studio_id: req.studioId },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    await prisma.event_tasks.deleteMany({ where: { event_id: id } });
+    await prisma.event_history.deleteMany({ where: { event_id: id } });
+    await prisma.event_customers.deleteMany({ where: { event_id: id } });
+    await prisma.albums.updateMany({ where: { event_id: id }, data: { event_id: null } });
+    await prisma.events.delete({ where: { id } });
+
+    res.json({ success: true, message: 'Event deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
@@ -339,4 +377,5 @@ module.exports = {
   updateStatus,
   getHistory,
   getCalendar,
+  delete: deleteEvent,
 };

@@ -32,6 +32,7 @@ const nav = [
   ['Events & shoots', '/studio/events', CalendarCheck],
   ['Calendar', '/studio/calendar', CalendarDays],
   ['Photo library', '/studio/folders', FolderOpen],
+  ['Albums', '/studio/albums', FolderOpen],
   ['Customers', '/studio/customers', Users],
   ['Cameras & sync', '/studio/cameras', Camera],
 ];
@@ -266,9 +267,19 @@ export function StudioLayout() {
               {theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
             </button>
 
-            <span className="topbar-avatar" title={user?.full_name || 'Member'}>
-              {userInitials}
-            </span>
+            <div className="flex items-center gap-1.5 pl-2 border-l border-border">
+              <span className="topbar-avatar" title={user?.full_name || 'Member'}>
+                {userInitials}
+              </span>
+              <button
+                className="button-ghost text-xs flex items-center gap-1 py-1 px-2 rounded border border-border text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                onClick={handleLogout}
+                title="Sign out of Studio"
+              >
+                <LogOut size={13} />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
+            </div>
           </div>
         </header>
 

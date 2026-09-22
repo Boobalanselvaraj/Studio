@@ -195,7 +195,7 @@ async function readObject(provider, objectKey) {
     });
     const remotePath = path.posix.join(creds.root || '/', objectKey);
     const pass = new stream.PassThrough();
-    sftp.get(remotePath, pass).finally(() => {
+    sftp.get(remotePath, pass).catch(error => pass.destroy(error)).finally(() => {
       sftp.end().catch(() => {});
     });
     return pass;
@@ -214,7 +214,7 @@ async function readObject(provider, objectKey) {
     });
     const remotePath = path.posix.join(creds.root || '/', objectKey);
     const pass = new stream.PassThrough();
-    client.downloadTo(pass, remotePath).finally(() => {
+    client.downloadTo(pass, remotePath).catch(error => pass.destroy(error)).finally(() => {
       client.close();
     });
     return pass;
@@ -320,6 +320,8 @@ async function deleteObject(provider, objectKey) {
   if (backend === 'local') {
     const root = getLocalRootPath();
     const filePath = path.resolve(root, objectKey);
+    const rel = path.relative(root, filePath);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Path traversal detected');
     if (fs.existsSync(filePath)) {
       await fsPromises.unlink(filePath);
     }

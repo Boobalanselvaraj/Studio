@@ -55,6 +55,10 @@ export const eventsApi = {
     const res = await api.patch(`/studio/events/${id}`, data);
     return res.data;
   },
+  delete: async (id) => {
+    const res = await api.delete(`/studio/events/${id}`);
+    return res.data;
+  },
   updateStatus: async (id, payload) => {
     const res = await api.post(`/studio/events/${id}/status`, payload);
     return res.data;
@@ -88,6 +92,14 @@ export const eventsApi = {
 export const foldersApi = {
   getTree: async () => {
     const res = await api.get('/studio/folders/tree');
+    return res.data;
+  },
+  getServerExplorer: async () => {
+    const res = await api.get('/studio/folders/server-explorer');
+    return res.data;
+  },
+  batchAssignAssets: async (data) => {
+    const res = await api.post('/studio/folders/batch-assign', data);
     return res.data;
   },
   syncStorage: async () => {
@@ -140,6 +152,45 @@ export const camerasApi = {
     const res = await api.post(`/studio/cameras/${id}/retire`);
     return res.data;
   },
+  delete: async (id) => {
+    const res = await api.delete(`/studio/cameras/${id}`);
+    return res.data;
+  },
+  assignAlbum: async (id, albumId) => {
+    const res = await api.patch(`/studio/cameras/${id}/album`, { album_id: albumId });
+    return res.data;
+  },
+};
+
+export const albumsApi = {
+  list: async () => {
+    const res = await api.get('/studio/albums');
+    return res.data;
+  },
+  getById: async (id) => {
+    const res = await api.get(`/studio/albums/${id}`);
+    return res.data;
+  },
+  create: async (data) => {
+    const res = await api.post('/studio/albums', data);
+    return res.data;
+  },
+  update: async (id, data) => {
+    const res = await api.patch(`/studio/albums/${id}`, data);
+    return res.data;
+  },
+  delete: async (id) => {
+    const res = await api.delete(`/studio/albums/${id}`);
+    return res.data;
+  },
+  addAssets: async (id, assetIds) => {
+    const res = await api.post(`/studio/albums/${id}/assets`, { asset_ids: assetIds });
+    return res.data;
+  },
+  removeAsset: async (id, assetId) => {
+    const res = await api.delete(`/studio/albums/${id}/assets/${assetId}`);
+    return res.data;
+  },
 };
 
 export const customersApi = {
@@ -151,8 +202,20 @@ export const customersApi = {
     const res = await api.post('/studio/customers', data);
     return res.data;
   },
+  update: async (id, data) => {
+    const res = await api.patch(`/studio/customers/${id}`, data);
+    return res.data;
+  },
+  delete: async (id) => {
+    const res = await api.delete(`/studio/customers/${id}`);
+    return res.data;
+  },
   shareAlbum: async (data) => {
     const res = await api.post('/studio/customers/albums/share', data);
+    return res.data;
+  },
+  unshareAlbum: async (data) => {
+    const res = await api.post('/studio/customers/albums/unshare', data);
     return res.data;
   },
 };
@@ -265,8 +328,40 @@ export const adminApi = {
     const res = await api.get('/admin/allocation-requests');
     return res.data;
   },
+  createAllocationRequest: async (data) => {
+    const res = await api.post('/admin/allocation-requests', data);
+    return res.data;
+  },
+  updateAllocationRequest: async (id, data) => {
+    const res = await api.patch(`/admin/allocation-requests/${id}`, data);
+    return res.data;
+  },
+  deleteAllocationRequest: async (id) => {
+    const res = await api.delete(`/admin/allocation-requests/${id}`);
+    return res.data;
+  },
   resolveAllocationRequest: async (id, data) => {
     const res = await api.post(`/admin/allocation-requests/${id}/resolve`, data);
+    return res.data;
+  },
+  listAllInvoices: async () => {
+    const res = await api.get('/admin/invoices');
+    return res.data;
+  },
+  listStudioInvoices: async (studioId) => {
+    const res = await api.get(`/admin/studios/${studioId}/invoices`);
+    return res.data;
+  },
+  generateStudioInvoice: async (studioId, data) => {
+    const res = await api.post(`/admin/studios/${studioId}/invoices`, data);
+    return res.data;
+  },
+  updateStudioInvoice: async (studioId, invoiceId, data) => {
+    const res = await api.patch(`/admin/studios/${studioId}/invoices/${invoiceId}`, data);
+    return res.data;
+  },
+  deleteStudioInvoice: async (studioId, invoiceId) => {
+    const res = await api.delete(`/admin/studios/${studioId}/invoices/${invoiceId}`);
     return res.data;
   },
   getBillingPlans: async () => {
@@ -275,6 +370,34 @@ export const adminApi = {
   },
   createBillingPlan: async (data) => {
     const res = await api.post('/admin/billing-plans', data);
+    return res.data;
+  },
+  recordManualPayment: async (studioId, invoiceId, data = {}) => {
+    const res = await api.post(`/admin/studios/${studioId}/invoices/${invoiceId}/manual-payment`, data);
+    return res.data;
+  },
+  listStudioStorageConnections: async (studioId) => {
+    const res = await api.get(`/admin/studios/${studioId}/storage-connections`);
+    return res.data;
+  },
+  provisionPlatformStorage: async (studioId, data) => {
+    const res = await api.post(`/admin/studios/${studioId}/storage-connections`, data);
+    return res.data;
+  },
+  listStorageServers: async () => {
+    const res = await api.get('/admin/storage-servers');
+    return res.data;
+  },
+  createStorageServer: async (data) => {
+    const res = await api.post('/admin/storage-servers', data);
+    return res.data;
+  },
+  updateStorageServer: async (id, data) => {
+    const res = await api.put(`/admin/storage-servers/${id}`, data);
+    return res.data;
+  },
+  deleteStorageServer: async (id) => {
+    const res = await api.delete(`/admin/storage-servers/${id}`);
     return res.data;
   },
 };

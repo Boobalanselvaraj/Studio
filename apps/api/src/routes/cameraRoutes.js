@@ -8,4 +8,7 @@ router.post('/', requireStudioRole(['studio_owner']), cameraController.create);
 router.patch('/:id/status', requireStudioRole(['studio_owner']), cameraController.toggleActive);
 router.post('/:id/retire', requireStudioRole(['studio_owner']), cameraController.retire);
 
+router.delete('/:id', requireStudioRole(['studio_owner']), cameraController.delete);
+
+router.patch('/:id/album', requireStudioRole(['studio_owner','studio_manager']), cameraController.assignAlbum);
 module.exports = router;

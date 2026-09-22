@@ -7,7 +7,9 @@ import { AuthLayout } from './layouts/AuthLayout';
 import { StudioLayout } from './layouts/StudioLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 import { CustomerLayout } from './layouts/CustomerLayout';
+import { ToastContainer } from './components/ui/toast';
 
+const AlbumsPage = lazy(() => import('./pages/studio/albums/AlbumsPage').then(m => ({default:m.AlbumsPage})));
 // Pages
 const LoginPage = lazy(() => import('./pages/auth/LoginPage').then(module => ({ default: module.LoginPage })));
 const StudioDashboardPage = lazy(() => import('./pages/studio/dashboard/StudioDashboardPage').then(module => ({ default: module.StudioDashboardPage })));
@@ -21,6 +23,8 @@ const StorageSettingsPage = lazy(() => import('./pages/studio/storage/StorageSet
 const BrandingSettingsPage = lazy(() => import('./pages/studio/branding/BrandingSettingsPage').then(module => ({ default: module.BrandingSettingsPage })));
 const BillingPage = lazy(() => import('./pages/studio/billing/BillingPage').then(module => ({ default: module.BillingPage })));
 const AdminDashboardPage = lazy(() => import('./pages/super-admin/AdminDashboardPage').then(module => ({ default: module.AdminDashboardPage })));
+const StorageServersPage = lazy(() => import('./pages/super-admin/StorageServersPage').then(module => ({ default: module.StorageServersPage })));
+const SupportTicketsPage = lazy(() => import('./pages/super-admin/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
 const BillingPlansPage = lazy(() => import('./pages/super-admin/BillingPlansPage').then(module => ({ default: module.BillingPlansPage })));
 const CustomerGalleriesPage = lazy(() => import('./pages/customer/CustomerGalleriesPage').then(module => ({ default: module.CustomerGalleriesPage })));
 const GalleryViewPage = lazy(() => import('./pages/customer/GalleryViewPage').then(module => ({ default: module.GalleryViewPage })));
@@ -29,6 +33,14 @@ const PublicGalleryViewPage = lazy(() => import('./pages/public/PublicGalleryVie
 import { useAuthStore } from './stores/authStore';
 import { initBrandColor } from './theme/brandColor';
 
+function Guard({children,admin=false,studio=false}) {
+ const {user,isInitialized,currentStudio}=useAuthStore();
+ if(!isInitialized)return <div role="status">Loading account…</div>;
+ if(!user)return <Navigate to="/login" replace/>;
+ if(admin && !user.is_super_admin)return <Navigate to="/studio" replace/>;
+ if(studio && !currentStudio)return <Navigate to={user.is_super_admin?'/admin':'/customer/galleries'} replace/>;
+ return children;
+}
 export function App() {
   React.useEffect(() => {
     initBrandColor();
@@ -37,7 +49,7 @@ export function App() {
 
   return (
     <ThemeProvider defaultTheme="light" storageKey="studio-theme">
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Suspense fallback={<div className="app-loading" role="status">Opening your workspace…</div>}>
           <Routes>
             {/* Public Shared Gallery Link (Bearer view without login) */}
@@ -49,13 +61,14 @@ export function App() {
             </Route>
 
             {/* Studio Management Zone */}
-            <Route path="/studio" element={<StudioLayout />}>
+            <Route path="/studio" element={<Guard studio><StudioLayout /></Guard>}>
               <Route index element={<Navigate to="/studio/dashboard" replace />} />
               <Route path="dashboard" element={<StudioDashboardPage />} />
               <Route path="events" element={<EventsPage />} />
               <Route path="calendar" element={<CalendarPage />} />
               <Route path="events/:id" element={<EventDetailPage />} />
               <Route path="folders" element={<FoldersPage />} />
+              <Route path="albums" element={<AlbumsPage />} />
               <Route path="cameras" element={<CamerasPage />} />
               <Route path="customers" element={<CustomersPage />} />
               <Route path="storage" element={<StorageSettingsPage />} />
@@ -64,14 +77,16 @@ export function App() {
             </Route>
 
             {/* Super Admin Zone */}
-            <Route path="/admin" element={<AdminLayout />}>
+            <Route path="/admin" element={<Guard admin><AdminLayout /></Guard>}>
               <Route index element={<Navigate to="/admin/studios" replace />} />
               <Route path="studios" element={<AdminDashboardPage />} />
+              <Route path="storage-servers" element={<StorageServersPage />} />
+              <Route path="support" element={<SupportTicketsPage />} />
               <Route path="billing-plans" element={<BillingPlansPage />} />
             </Route>
 
             {/* Customer Portal Zone */}
-            <Route path="/" element={<CustomerLayout />}>
+            <Route path="/" element={<Guard><CustomerLayout /></Guard>}>
               <Route index element={<Navigate to="/customer/galleries" replace />} />
               <Route path="customer/galleries" element={<CustomerGalleriesPage />} />
               <Route path="gallery/:albumId" element={<GalleryViewPage />} />
@@ -81,6 +96,7 @@ export function App() {
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Suspense>
+        <ToastContainer />
       </BrowserRouter>
     </ThemeProvider>
   );

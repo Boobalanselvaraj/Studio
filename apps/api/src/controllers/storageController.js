@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 const { encryptStorageCredentials } = require('../config/storage');
 const { testConnection: probeStorage } = require('../services/storageAdapters');
 
-const VALID_STUDIO_BACKENDS = new Set(['s3', 'sftp', 'ftp', 'local']);
+const VALID_STUDIO_BACKENDS = new Set(['s3', 'sftp', 'ftp']);
 
 function formatProviderDTO(p) {
   return {
@@ -16,7 +16,7 @@ function formatProviderDTO(p) {
     health: p.health,
     tested_at: p.tested_at,
     version: p.version,
-    has_credentials: Boolean(p.storage_credentials && p.storage_credentials.length > 0),
+    has_credentials: Boolean(p.storage_credentials && (!Array.isArray(p.storage_credentials) || p.storage_credentials.length > 0)),
     created_at: p.created_at,
   };
 }
@@ -56,10 +56,10 @@ async function create(req, res, next) {
     }
 
     if (!VALID_STUDIO_BACKENDS.has(backend)) {
-      return res.status(400).json({ error: `Invalid storage backend '${backend}'. Supported: s3, sftp, ftp, local.` });
+      return res.status(400).json({ error: `Invalid storage backend '${backend}'. Supported: s3, sftp, ftp.` });
     }
 
-    if (backend !== 'local' && !credentials) {
+    if (!credentials) {
       return res.status(400).json({ error: `Credentials are required for ${backend.toUpperCase()} storage connection.` });
     }
 

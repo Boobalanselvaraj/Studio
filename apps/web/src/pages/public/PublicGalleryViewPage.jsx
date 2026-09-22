@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  Download,
 } from 'lucide-react';
 import { publicGalleryApi } from '../../api/services';
 
@@ -203,9 +204,24 @@ export function PublicGalleryViewPage() {
                   loading="lazy"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-2.5 text-white">
-                  <span className="text-xs truncate max-w-[80%] font-medium">{asset.filename}</span>
-                  <Maximize2 size={14} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-2.5 text-white">
+                  <span className="text-xs truncate max-w-[70%] font-medium">{asset.filename}</span>
+                  <div className="flex items-center gap-1.5">
+                    {asset.downloadUrl && (
+                      <a
+                        href={asset.downloadUrl}
+                        download={asset.filename}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1 rounded bg-white/20 hover:bg-white/40 text-white transition-colors"
+                        title="Download photo"
+                      >
+                        <Download size={13} />
+                      </a>
+                    )}
+                    <Maximize2 size={13} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -218,10 +234,23 @@ export function PublicGalleryViewPage() {
         <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-between p-4 select-none">
           {/* Modal Top Bar */}
           <div className="w-full flex items-center justify-between text-white/80 py-2">
-            <span className="text-sm font-medium truncate">
+            <span className="text-sm font-medium truncate max-w-sm">
               {assets[previewAssetIndex].filename}
             </span>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {assets[previewAssetIndex].downloadUrl && (
+                <a
+                  href={assets[previewAssetIndex].downloadUrl}
+                  download={assets[previewAssetIndex].filename}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors"
+                  title="Download High-Res Original"
+                >
+                  <Download size={13} />
+                  <span>Download</span>
+                </a>
+              )}
               <span className="text-xs text-white/60">
                 {previewAssetIndex + 1} / {assets.length}
               </span>
