@@ -431,7 +431,6 @@ async function getServerExplorerData(req, res, next) {
           is_soft_deleted: false,
         },
         include: {
-          camera: { select: { id: true, name: true, model: true } },
           storage_provider: { select: { id: true, name: true, backend: true } },
           album_assets: {
             include: {
@@ -459,6 +458,8 @@ async function getServerExplorerData(req, res, next) {
       }),
     ]);
 
+    const camerasMap = new Map((cameras || []).map((c) => [c.id, { id: c.id, name: c.name, model: c.model }]));
+
     const formattedAssets = assets.map((a) => ({
       id: a.id,
       filename: a.filename,
@@ -467,7 +468,7 @@ async function getServerExplorerData(req, res, next) {
       created_at: a.created_at,
       original_path: a.original_path,
       url: `/api/studio/folders/assets/${a.id}/view`,
-      camera: a.camera || null,
+      camera: a.camera_id ? (camerasMap.get(a.camera_id) || null) : null,
       storage_provider: a.storage_provider || null,
       albums: a.album_assets.map((aa) => aa.album),
     }));

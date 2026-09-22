@@ -21,12 +21,18 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
+  UploadCloud,
+  FileImage,
+  Download,
+  Image,
+  CheckCircle2,
 } from 'lucide-react';
 import api from '../../../api/client';
 import { PageHeading } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
+import { toast } from '../../../components/ui/toast';
 import { Select } from '../../../components/ui/select';
 import { camerasApi, storageApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
@@ -57,6 +63,67 @@ export function CamerasPage() {
   const [formAlbum, setFormAlbum] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
+
+  // View Photos Modal state
+  const [viewPhotosCamera, setViewPhotosCamera] = useState(null);
+  const [cameraAssets, setCameraAssets] = useState([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
+
+  // Direct Upload Modal state
+  const [uploadCamera, setUploadCamera] = useState(null);
+  const [uploadingFiles, setUploadingFiles] = useState([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSuccessCount, setUploadSuccessCount] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleOpenViewPhotos = async (cam) => {
+    setViewPhotosCamera(cam);
+    setLoadingAssets(true);
+    try {
+      const data = await camerasApi.getAssets(cam.id);
+      setCameraAssets(data.assets || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to load camera photos');
+    } finally {
+      setLoadingAssets(false);
+    }
+  };
+
+  const handleOpenUpload = (cam) => {
+    setUploadCamera(cam);
+    setUploadingFiles([]);
+    setUploadProgress(0);
+    setUploadSuccessCount(0);
+  };
+
+  const handleFilesSelected = async (files) => {
+    if (!files || files.length === 0 || !uploadCamera) return;
+    const fileList = Array.from(files);
+    setUploadingFiles(fileList);
+    setUploadProgress(0);
+    setIsUploading(true);
+    let success = 0;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      try {
+        await camerasApi.uploadPhoto(uploadCamera.id, file);
+        success++;
+        setUploadSuccessCount(success);
+      } catch (err) {
+        console.error('Failed to upload file:', file.name, err);
+      }
+      setUploadProgress(Math.round(((i + 1) / fileList.length) * 100));
+    }
+
+    setIsUploading(false);
+    toast.success(`Successfully uploaded ${success} photos to ${uploadCamera.name}`);
+    loadData();
+    if (viewPhotosCamera?.id === uploadCamera.id) {
+      handleOpenViewPhotos(uploadCamera);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -552,9 +619,31 @@ export function CamerasPage() {
                 </div>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-border">
+              <div className="pt-3 mt-3 border-t border-border space-y-2">
+                {d.lifecycle !== 'retired' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      className="text-xs bg-brand-primary text-white hover:opacity-95 shadow-sm"
+                      onClick={() => handleOpenUpload(d)}
+                    >
+                      <UploadCloud size={14} className="mr-1.5" />
+                      Upload Photos
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => handleOpenViewPhotos(d)}
+                    >
+                      <Eye size={14} className="mr-1.5 text-brand-primary" />
+                      View Photos
+                    </Button>
+                  </div>
+                )}
+
                 {d.lifecycle !== 'retired' ? (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 pt-1">
                     <Button
                       variant="outline"
                       size="sm"
@@ -878,6 +967,256 @@ export function CamerasPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* View Camera Uploaded Photos Modal */}
+      <Modal
+        open={!!viewPhotosCamera}
+        onOpenChange={(v) => !v && setViewPhotosCamera(null)}
+        title={`${viewPhotosCamera?.name || 'Camera'} — Uploaded Photos (${cameraAssets.length})`}
+        description={`View and manage all photos ingested by ${viewPhotosCamera?.name}. Destination: ${viewPhotosCamera?.storage_provider?.name || 'Default Storage'}.`}
+      >
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+          {/* Header Action Bar inside modal */}
+          <div className="flex items-center justify-between p-3 bg-surface-2 rounded-xl border border-border">
+            <div className="text-xs">
+              <span className="text-muted">Total Ingested:</span>{' '}
+              <strong className="text-foreground">{cameraAssets.length} photos</strong>
+              <span className="text-muted mx-2">•</span>
+              <span className="text-muted">Last sync:</span>{' '}
+              <strong className="text-foreground">
+                {viewPhotosCamera?.last_sync_at
+                  ? new Date(viewPhotosCamera.last_sync_at).toLocaleTimeString()
+                  : 'None yet'}
+              </strong>
+            </div>
+
+            <Button
+              size="sm"
+              className="text-xs bg-brand-primary text-white"
+              onClick={() => handleOpenUpload(viewPhotosCamera)}
+            >
+              <UploadCloud size={14} className="mr-1.5" />
+              Upload Photos Now
+            </Button>
+          </div>
+
+          {loadingAssets ? (
+            <div className="flex justify-center items-center py-16 text-muted">
+              <Loader2 size={24} className="animate-spin text-brand-primary mr-2" />
+              <span className="text-xs">Loading photos from camera storage...</span>
+            </div>
+          ) : cameraAssets.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-border rounded-xl p-6">
+              <div className="p-3 bg-surface-2 rounded-full inline-block mb-3 text-muted">
+                <FileImage size={32} />
+              </div>
+              <h4 className="text-sm font-semibold mb-1">No Photos Uploaded Yet</h4>
+              <p className="text-xs text-muted max-w-sm mx-auto mb-4">
+                Photos taken on this camera over Wi-Fi, or uploaded directly from your computer or phone, will appear here immediately.
+              </p>
+              <Button
+                size="sm"
+                className="bg-brand-primary text-white text-xs"
+                onClick={() => handleOpenUpload(viewPhotosCamera)}
+              >
+                <UploadCloud size={14} className="mr-1.5" />
+                Upload First Photo
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {cameraAssets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="group relative rounded-lg overflow-hidden border border-border bg-surface-1 shadow-sm hover:border-brand-primary/50 transition-all flex flex-col"
+                >
+                  <div className="aspect-square bg-surface-muted relative overflow-hidden flex items-center justify-center">
+                    <img
+                      src={asset.url}
+                      alt={asset.filename}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.parentElement.innerHTML = '<div class="flex flex-col items-center justify-center text-muted p-2 text-[10px]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Preview</span></div>';
+                      }}
+                    />
+
+                    {/* Overlay Action on Hover */}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <a
+                        href={asset.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 rounded-full bg-white/20 hover:bg-white text-white hover:text-black transition-colors"
+                        title="View high-res"
+                      >
+                        <Eye size={14} />
+                      </a>
+                      <a
+                        href={`${asset.url}?download=true`}
+                        download={asset.filename}
+                        className="p-1.5 rounded-full bg-white/20 hover:bg-white text-white hover:text-black transition-colors"
+                        title="Download file"
+                      >
+                        <Download size={14} />
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="p-2 text-[11px] space-y-0.5">
+                    <p className="font-medium truncate" title={asset.filename}>
+                      {asset.filename}
+                    </p>
+                    <div className="flex justify-between text-muted text-[10px]">
+                      <span>
+                        {(Number(asset.file_size_bytes || 0) / (1024 * 1024)).toFixed(1)} MB
+                      </span>
+                      <span>
+                        {new Date(asset.created_at).toLocaleDateString([], {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Direct Wi-Fi & Web Camera Upload Modal */}
+      <Modal
+        open={!!uploadCamera}
+        onOpenChange={(v) => !v && !isUploading && setUploadCamera(null)}
+        title={`Direct Ingest to "${uploadCamera?.name || 'Camera'}"`}
+        description={`Upload photos directly from your browser, SD card, or mobile phone into ${uploadCamera?.name}. Files stream straight to ${uploadCamera?.storage_provider?.name || 'configured storage'}.`}
+      >
+        <div className="space-y-4">
+          {/* Destination Details pill */}
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-2 text-xs border border-border">
+            <div className="flex items-center gap-2">
+              <Camera size={15} className="text-brand-primary" />
+              <span className="font-medium">{uploadCamera?.name}</span>
+            </div>
+            <div className="text-muted flex items-center gap-1">
+              <HardDrive size={13} />
+              <span>{uploadCamera?.storage_provider?.name || 'Default Storage'}</span>
+            </div>
+          </div>
+
+          {/* Drag & Drop File Zone */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              if (e.dataTransfer.files) {
+                handleFilesSelected(e.dataTransfer.files);
+              }
+            }}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+              isDragging
+                ? 'border-brand-primary bg-brand-primary/10'
+                : 'border-border hover:border-brand-primary/50 bg-surface-1'
+            }`}
+          >
+            <input
+              type="file"
+              id="direct-camera-file-input"
+              multiple
+              accept="image/*,.cr2,.cr3,.nef,.arw,.dng"
+              className="hidden"
+              disabled={isUploading}
+              onChange={(e) => {
+                if (e.target.files) handleFilesSelected(e.target.files);
+              }}
+            />
+
+            <label
+              htmlFor="direct-camera-file-input"
+              className="cursor-pointer flex flex-col items-center justify-center space-y-3"
+            >
+              <div className="p-4 rounded-full bg-brand-primary/10 text-brand-primary shadow-sm">
+                <UploadCloud size={36} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Click to select photos or drag & drop here
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  Supports JPEG, PNG, WEBP, Canon RAW (.CR2, .CR3), Sony (.ARW), Nikon (.NEF)
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isUploading}
+                className="bg-brand-primary text-white text-xs shadow-sm"
+                onClick={() => document.getElementById('direct-camera-file-input')?.click()}
+              >
+                Browse Files from SD Card or Laptop
+              </Button>
+            </label>
+          </div>
+
+          {/* Upload Progress Status */}
+          {isUploading && (
+            <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2">
+              <div className="flex justify-between items-center text-xs font-medium">
+                <span className="flex items-center gap-1.5 text-brand-primary">
+                  <Loader2 size={13} className="animate-spin" />
+                  Uploading {uploadSuccessCount} of {uploadingFiles.length} files...
+                </span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div className="w-full bg-surface-3 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-brand-primary h-full transition-all duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {uploadSuccessCount > 0 && !isUploading && (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-600 dark:text-emerald-400 text-xs flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 size={16} />
+                Successfully uploaded {uploadSuccessCount} photos!
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+                onClick={() => {
+                  setUploadCamera(null);
+                  handleOpenViewPhotos(uploadCamera);
+                }}
+              >
+                View Uploaded Photos
+              </Button>
+            </div>
+          )}
+
+          {/* Wi-Fi Companion / Mobile Ingest Tip */}
+          <div className="p-3 rounded-xl bg-surface-2 border border-border text-xs text-muted space-y-1">
+            <p className="font-semibold text-foreground flex items-center gap-1.5">
+              <Wifi size={14} className="text-emerald-500" />
+              Wi-Fi Camera Upload:
+            </p>
+            <p>
+              For wireless shooting with your Canon 200D or phone, open this page on your phone or laptop connected to the camera Wi-Fi and drop files directly, or use SFTP port <code>2022</code> with username <code>{uploadCamera?.upload_username || uploadCamera?.sftpgo_username}</code>.
+            </p>
+          </div>
+        </div>
       </Modal>
 
       {/* Confirm Camera Deletion Modal (No Browser Inbuilt Confirm) */}

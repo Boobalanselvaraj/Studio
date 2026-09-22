@@ -64,6 +64,12 @@ async function ingest(camera,relative) {
     await tx.cameras.update({where:{id:camera.id},data:{last_sync_at:new Date()}});
     return a;
   },{timeout:15000});
+
+  // Zero platform storage consumption: delete temporary local buffer once transferred to external storage
+  if(provider && storageProviderId && asset){
+    await fsp.unlink(file).catch(() => {});
+  }
+
   if(asset) require('./storageWatcher').storageEvents.emit('media_change',{studio_id:camera.studio_id,camera_id:camera.id,asset_id:asset.id,album_id:camera.album_id});
   return {status:asset?'accepted':'duplicate_event_ignored',asset_id:asset?.id};
 }

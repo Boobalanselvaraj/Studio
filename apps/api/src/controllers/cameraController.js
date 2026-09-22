@@ -1,3 +1,4 @@
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 const sftpgoService = require('../services/sftpgoService');
@@ -257,6 +258,150 @@ async function deleteCamera(req, res, next) {
   }
 }
 
+async function getCameraAssets(req, res, next) {
+  try {
+    const cameraId = req.params.id;
+    const camera = await prisma.cameras.findFirst({
+      where: { id: cameraId, studio_id: req.studioId },
+    });
+    if (!camera) return res.status(404).json({ error: 'Camera not found' });
+
+    const assets = await prisma.assets.findMany({
+      where: { camera_id: cameraId, studio_id: req.studioId, is_soft_deleted: false },
+      include: {
+        album_assets: {
+          include: {
+            album: { select: { id: true, title: true, is_published: true } },
+          },
+        },
+        storage_provider: { select: { id: true, name: true, backend: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    const formatted = assets.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mime_type: a.mime_type,
+      file_size_bytes: a.file_size_bytes ? a.file_size_bytes.toString() : '0',
+      created_at: a.created_at,
+      url: `/api/studio/folders/assets/${a.id}/view`,
+      storage_provider: a.storage_provider || null,
+      albums: a.album_assets.map((aa) => aa.album),
+    }));
+
+    res.json({
+      camera: formatCameraDTO(camera),
+      total_count: formatted.length,
+      assets: formatted,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function uploadCameraPhoto(req, res, next) {
+  try {
+    const cameraId = req.params.id;
+    const camera = await prisma.cameras.findFirst({
+      where: { id: cameraId, studio_id: req.studioId },
+      include: { storage_provider: true },
+    });
+    if (!camera) return res.status(404).json({ error: 'Camera not found' });
+    if (camera.lifecycle === 'retired') {
+      return res.status(400).json({ error: 'Cannot upload to a retired camera' });
+    }
+
+    const filename = (req.headers['x-filename'] || req.query.filename || `photo_${Date.now()}.jpg`).toString().trim();
+    const mimeType = req.headers['content-type'] || 'image/jpeg';
+    const declaredSize = parseInt(req.headers['content-length'] || req.headers['x-file-size'] || '0', 10);
+
+    let provider = camera.storage_provider;
+    let storageProviderId = camera.storage_provider_id;
+    if (!provider) {
+      provider = await prisma.storage_providers.findFirst({
+        where: { studio_id: req.studioId, is_enabled: true },
+        orderBy: [{ is_default: 'desc' }, { created_at: 'asc' }],
+        include: { storage_credentials: true },
+      });
+      if (provider) storageProviderId = provider.id;
+    }
+
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectKey = `${req.studioId}/${camera.id}/${Date.now()}-${safeName}`;
+
+    let actualBytes = declaredSize;
+    if (provider) {
+      const { writeObject } = require('../services/storageAdapters');
+      const result = await writeObject(provider, objectKey, req, mimeType);
+      actualBytes = result?.bytesWritten || declaredSize;
+    }
+
+    const asset = await prisma.$transaction(async (tx) => {
+      const newAsset = await tx.assets.create({
+        data: {
+          studio_id: req.studioId,
+          camera_id: camera.id,
+          storage_provider_id: storageProviderId || null,
+          filename: path.basename(filename),
+          original_path: objectKey,
+          object_key: objectKey,
+          mime_type: mimeType,
+          file_size_bytes: BigInt(actualBytes || 0),
+          processing_state: 'ready',
+        },
+      });
+
+      if (camera.album_id) {
+        await tx.album_assets.upsert({
+          where: {
+            album_id_asset_id: {
+              album_id: camera.album_id,
+              asset_id: newAsset.id,
+            },
+          },
+          create: {
+            album_id: camera.album_id,
+            asset_id: newAsset.id,
+          },
+          update: {},
+        });
+      }
+
+      await tx.cameras.update({
+        where: { id: camera.id },
+        data: { last_sync_at: new Date() },
+      });
+
+      return newAsset;
+    });
+
+    try {
+      const { storageEvents } = require('../services/storageWatcher');
+      storageEvents.emit('media_change', {
+        studio_id: req.studioId,
+        camera_id: camera.id,
+        asset_id: asset.id,
+        album_id: camera.album_id,
+      });
+    } catch (e) {}
+
+    res.status(201).json({
+      success: true,
+      asset: {
+        id: asset.id,
+        filename: asset.filename,
+        file_size_bytes: asset.file_size_bytes.toString(),
+        mime_type: asset.mime_type,
+        created_at: asset.created_at,
+        url: `/api/studio/folders/assets/${asset.id}/view`,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   assignAlbum,
   list,
@@ -264,4 +409,6 @@ module.exports = {
   toggleActive,
   retire,
   delete: deleteCamera,
+  getCameraAssets,
+  uploadCameraPhoto,
 };

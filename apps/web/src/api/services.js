@@ -160,6 +160,20 @@ export const camerasApi = {
     const res = await api.patch(`/studio/cameras/${id}/album`, { album_id: albumId });
     return res.data;
   },
+  getAssets: async (id) => {
+    const res = await api.get(`/studio/cameras/${id}/assets`);
+    return res.data;
+  },
+  uploadPhoto: async (id, file) => {
+    const res = await api.post(`/studio/cameras/${id}/upload`, file, {
+      headers: {
+        'Content-Type': file.type || 'image/jpeg',
+        'x-filename': file.name,
+        'x-file-size': file.size ? file.size.toString() : '0',
+      },
+    });
+    return res.data;
+  },
 };
 
 export const albumsApi = {
