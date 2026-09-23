@@ -42,7 +42,7 @@ out/
 *.cert
 
 # Runtime data & Local Storage
-storage/
+
 media/
 uploads/
 postgres-data/
