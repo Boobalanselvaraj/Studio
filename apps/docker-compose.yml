@@ -1,0 +1,56 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: studio_backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4000}:4000"
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      # External/Host PostgreSQL: When running in Docker on Windows/Mac, host.docker.internal points to host machine
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres_secure_password@host.docker.internal:5432/photo_studio_db}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
+      SFTPGO_HOST: http://sftpgo:8080
+      STORAGE_ROOT_PATH: /storage
+      SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_12345}
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_12345}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-01234567890123456789012345678901}
+    volumes:
+      - ../storage:/storage
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - studio_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: studio_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: /api
+      API_PROXY_TARGET: http://backend:4000
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - studio_network
+
+networks:
+  studio_network:
+    name: studio_network
+    driver: bridge

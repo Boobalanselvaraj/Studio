@@ -1,0 +1,70 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: studio_redis
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - studio_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: studio_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    networks:
+      - studio_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sftpgo:
+    image: drakkan/sftpgo:v2.6-alpine
+    container_name: studio_sftpgo
+    restart: unless-stopped
+    ports:
+      - "${SFTPGO_PORT:-2022}:2022"
+      - "127.0.0.1:${SFTPGO_ADMIN_PORT:-8080}:8080"
+    environment:
+      SFTPGO_DATA_PROVIDER__DRIVER: sqlite
+      SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN: 'true'
+      SFTPGO_HTTPD__BINDINGS__0__PORT: 8080
+      SFTPGO_SFTPD__BINDINGS__0__PORT: 2022
+      SFTPGO_DEFAULT_ADMIN_USERNAME: ${SFTPGO_ADMIN_USER:-admin}
+      SFTPGO_DEFAULT_ADMIN_PASSWORD: ${SFTPGO_ADMIN_PASSWORD:-password123}
+    volumes:
+      - sftpgo_data:/var/lib/sftpgo
+      - ../storage/studios:/srv/sftpgo/data
+    networks:
+      - studio_network
+
+volumes:
+  redis_data:
+  rabbitmq_data:
+  sftpgo_data:
+
+networks:
+  studio_network:
+    name: studio_network
+    driver: bridge

@@ -1,12 +1,10 @@
 name: photo-studio-platform
 
 include:
-  - compose/data.yml
-  - compose/media.yml
-  - compose/app.yml
+  - infrastructure/docker-compose.yml
+  - apps/docker-compose.yml
 
 networks:
-  studio_internal_network:
-    name: studio_internal_network
+  studio_network:
+    name: studio_network
     driver: bridge
-

@@ -1,178 +1,177 @@
-> Current development specification: [Studio Platform Implementation Plan v4](STUDIO_PLATFORM_IMPLEMENTATION_PLAN.md). It includes the audited source gaps, all nine revised requirements, migration sequence and release acceptance gates. Planned capabilities are not a statement that the current implementation is complete.
+# Photo Studio SaaS Platform
 
-# Photo Studio SaaS Platform (v3)
-
-A high-performance, multi-tenant SaaS platform built for professional photography studios. Features complete **Event / Shoot Workflow Management**, **Studio-Custom Hierarchical Folder Organization**, **Per-Studio Metered Storage Billing**, and a self-hosted **Immich / SFTPGo** media pipeline.
-
-> 📖 **Looking for the complete from-scratch guide?** Check out [**USER_AND_SETUP_GUIDE.md**](file:///e:/Existing/Studio%20App/USER_AND_SETUP_GUIDE.md) for full installation steps, seed credentials, role-by-role walkthroughs, and architecture details.
+A multi-tenant cloud platform built for professional photography studios. It combines complete shoot lifecycle tracking, customizable recursive folder trees, wireless Wi-Fi camera upload ingest via SFTPGo, white-labeled client galleries, and metered storage billing.
 
 ---
 
-## 1. High-Level Architecture
+## 1. Architecture Overview
 
 ```
-                                   INTERNET
-                                      │
-                                      ▼
-                              ┌──────────────┐
-                              │    NGINX     │
-                              │ TLS / Proxy  │
-                              └──────┬───────┘
-                                     │
-                   ┌─────────────────┴─────────────────┐
-                   │                                   │
-                   ▼                                   ▼
-            React + Vite                          Express API
-        (Admin / Studio / Customer)               Business Logic
-                                                          │
-        ┌──────────────────────────┬───────────────────┼───────────────────┬──────────────────────┐
-        │                          │                    │                   │                      │
-        ▼                          ▼                    ▼                   ▼                      ▼
-   PostgreSQL                   Redis               RabbitMQ           SFTPGo                  Immich
-  Platform DB              Cache/Sessions          Jobs/Events      File Transfer            Media Engine
-        │                          │                    │            Gateway                (internal only)
-        │                          │                    │                │                       │
-        │                          │                    │                ▼                       │
-        │                          │                    │        Studio Storage                  │
-        │                          │                    │      (Local / SFTP / S3)                │
-        │                          │                    │                │                       │
-        │                          │                    └────────────────┴───────────────────────┘
-        │                          │
-        │                          │
-        └──────────────┬───────────┘
-                        │
-                        ▼
-              Event / Workflow Engine
-        (status machine, tasks, notifications)
+                                [ Web Browser / Mobile ]
+                                           │
+                                           ▼
+                            ┌──────────────────────────────┐
+                            │   Frontend (React + Vite)    │
+                            │   Port: 3000                 │
+                            └──────────────┬───────────────┘
+                                           │ HTTP / REST
+                                           ▼
+                            ┌──────────────────────────────┐
+                            │    Backend (Node + Express)  │
+                            │    Port: 4000                │
+                            └──────┬───────┬───────┬───────┘
+                                   │       │       │
+             ┌─────────────────────┘       │       └─────────────────────┐
+             ▼                             ▼                             ▼
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│ External / Host Postgres│   │         Redis 7         │   │      RabbitMQ 3.13      │
+│ (Your PostgreSQL DB)    │   │ (Cache & Session Store) │   │ (Async Queues & Events) │
+│ Port: 5432              │   │ Port: 6379              │   │ Ports: 5672, 15672      │
+└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+                                           │
+                                           ▼
+                              ┌─────────────────────────┐
+                              │      SFTPGo Gateway     │
+                              │ (Direct Camera Ingest)  │
+                              │ Ports: 2022, 8080       │
+                              └─────────────────────────┘
 ```
 
 ---
 
-## 2. Repository Structure
+## 2. Directory Structure
 
 ```
-photo-studio-platform/
+Studio/
 ├── apps/
-│   ├── api/                            # Express Backend
-│   │   ├── package.json
-│   │   └── src/
-│   │       ├── config/                 # DB, Redis, RabbitMQ, Storage configs
-│   │       ├── controllers/            # Route controllers
-│   │       ├── middlewares/            # Auth, Tenant isolation, RBAC
-│   │       ├── routes/                 # Express route definitions
-│   │       ├── services/               # Business logic (Workflow, Folders, Billing, etc.)
-│   │       ├── repositories/           # Studio-isolated database access layer
-│   │       ├── queues/                 # RabbitMQ background workers
-│   │       └── server.js               # Application bootstrap
-│   └── web/                            # React + Vite Frontend
-│       ├── package.json
-│       ├── vite.config.js
-│       ├── tailwind.config.js
-│       └── src/
-│           ├── api/                    # Axios API client instance
-│           ├── components/
-│           │   ├── ui/                 # Accessible Radix/Tailwind components
-│           │   ├── event-kanban/       # Shoot workflow Kanban board
-│           │   ├── folder-tree/        # Recursive folder explorer
-│           │   └── gallery/            # Branded customer gallery grid
-│           ├── layouts/                # Admin, Studio, Customer, Auth layout shells
-│           ├── pages/                  # Route views (Dashboard, Events, Folders, Billing, etc.)
-│           ├── stores/                 # Zustand stores
-│           ├── theme/                  # Design tokens, ThemeProvider, BrandColorInjector
-│           └── App.jsx                 # Master application router
+│   ├── backend/               # Express.js REST API & Prisma 6 ORM
+│   │   ├── prisma/            # Database schema & seed scripts
+│   │   ├── src/               # Controllers, routes, queues, services
+│   │   ├── Dockerfile         # Standalone backend container image
+│   │   └── package.json
+│   ├── frontend/              # React 18 + Vite + Tailwind CSS SPA
+│   │   ├── src/               # Admin, Studio, and Customer portals
+│   │   ├── Dockerfile         # Standalone frontend container image
+│   │   └── package.json
+│   └── docker-compose.yml     # Unified compose file for backend + frontend
 ├── infrastructure/
-│   ├── postgres/init/                  # Initial multi-tenant schema DDL
-│   ├── nginx/                          # Reverse proxy & TLS config
-│   ├── redis/                          # Redis cache & session config
-│   ├── rabbitmq/                       # Queue & exchange definitions
-│   ├── sftpgo/                         # Camera upload gateway config
-│   ├── immich/                         # Internal media engine setup
-│   └── piwigo/                         # Isolated evaluation stack
-├── compose/
-│   ├── app.yml                         # API, Web, and Nginx containers
-│   ├── data.yml                        # PostgreSQL, Redis, RabbitMQ
-│   └── media.yml                       # SFTPGo, Immich, Piwigo
-├── docker/                             # Container build recipes
-├── docker-compose.yml                  # Unified Compose entry point
-├── .env.example                        # Comprehensive environment template
-├── .gitignore
-└── README.md
+│   ├── rabbitmq/              # RabbitMQ configuration & queue definitions
+│   ├── redis/                 # Redis configuration
+│   ├── sftpgo/                # SFTPGo gateway settings
+│   └── docker-compose.yml     # Infrastructure services (Redis, RabbitMQ, SFTPGo)
+├── storage/                   # Local file & camera ingest directory
+├── .env                       # Environment variables
+├── .env.example               # Environment variables template
+├── docker-compose.yml         # Umbrella compose file (includes apps + infrastructure)
+└── package.json               # Root workspace scripts & orchestrations
 ```
 
 ---
 
-## 3. Tech Stack
+## 3. Quick Start & Setup Guide
 
-| Layer | Technology |
-|---|---|
-| **Frontend Framework** | React 18 + Vite |
-| **Styling & Design System** | Tailwind CSS + CSS Variable Design Tokens |
-| **UI Components** | Radix UI Primitives (shadcn/ui style) + Lucide Icons |
-| **Backend Framework** | Node.js + Express |
-| **Database** | PostgreSQL 16 (Logical multi-tenancy via `studio_id`) |
-| **Cache & Sessions** | Redis 7 (`connect-redis`) |
-| **Async Queues** | RabbitMQ 3.13 (`amqplib`) |
-| **File Transfer Gateway** | SFTPGo (isolated per-camera SFTP credentials) |
-| **Media Engine** | Immich (Internal proxy only) |
-| **Reverse Proxy** | Nginx |
-
----
-
-## 4. Phased Build Order (Backend-First)
-
-1. **Phase 1**: Infrastructure (Postgres, Redis, RabbitMQ, SFTPGo, Immich, Nginx)
-2. **Phase 2**: Express foundation (DB connections, Auth sessions, Tenant & RBAC middlewares)
-3. **Phase 3**: Studio Management (Super Admin studio onboarding & provisioning)
-4. **Phase 4**: Storage Provider Configuration (Platform vs. Studio-Owned S3/NAS + AES-256 encryption)
-5. **Phase 5**: Camera Gateway (SFTPGo camera user provisioning & upload paths)
-6. **Phase 6**: Media Sync Pipeline (Upload → RabbitMQ → Immich indexing)
-7. **Phase 7**: Studio-Custom Folders (Self-referencing tree, drag-drop move jobs, tagging)
-8. **Phase 8**: Event & Shoot Management (Status state machine, checklists, reminders)
-9. **Phase 8.5**: Metered Billing (Storage snapshots, platform storage quotas, invoice generation)
-10. **Phase 9**: Branding & Customer Accounts (White-label injection, private gallery login)
-11. **Phase 10–14**: Frontend Application (Theme system, Studio Portal, Customer Portal, Super Admin)
-
----
-
-## 5. Quickstart & Development
-
-### 1. Configure Environment
-```bash
+### Step 1: Configure Environment Variables
+Copy `.env.example` to `.env` if not already present:
+```powershell
 cp .env.example .env
 ```
 
-### 2. Start Infrastructure Services
-```bash
-# Start PostgreSQL, Redis, RabbitMQ, SFTPGo, and Immich
-docker compose -f compose/data.yml -f compose/media.yml up -d
-```
+Set your **External or Host PostgreSQL** connection string in `.env`:
+```env
+# For Local Node.js development:
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<dbname>
 
-### 3. Run Backend API Locally
-```bash
-cd apps/api
-npm install
-npm run dev
-```
+# For Docker containers connecting to Host Postgres (Windows/Mac):
+DATABASE_URL=postgresql://<user>:<password>@host.docker.internal:5432/<dbname>
 
-### 4. Run Frontend Locally
-```bash
-cd apps/web
-npm install
-npm run dev
+# For Remote/Cloud PostgreSQL:
+DATABASE_URL=postgresql://<user>:<password>@<remote-host>:5432/<dbname>?sslmode=require
 ```
 
 ---
 
-## 6. Pushing to Remote Git Repository
+### Step 2: Start Infrastructure Services
+Start Redis, RabbitMQ, and SFTPGo in Docker:
+```powershell
+npm run infra:up
+```
+*(To stop infrastructure: `npm run infra:down`)*
 
-To connect this initialized repository to GitHub / GitLab and share with your team:
+---
 
-```bash
-# 1. Add your remote repository
-git remote add origin <YOUR_GIT_REPO_URL>
+### Step 3: Initialize Database Schema & Seed Data
+Push the Prisma database schema into your external PostgreSQL and populate default test accounts:
+```powershell
+# Push schema tables to your PostgreSQL database
+npm run db:push
 
-# 2. Push initial commit to main branch
-git branch -M main
-git push -u origin main
+# Populate default Super Admin, Studio, Events, and Customer data
+npm run db:seed
 ```
 
+*(Optional: Run `npm run db:studio` to open Prisma Studio web DB browser).*
+
+---
+
+### Step 4: Run Application
+
+#### Option A: Local Development (Recommended)
+Open two separate terminal windows:
+
+- **Terminal 1 (Backend API):**
+  ```powershell
+  npm run dev:backend
+  ```
+  *Runs on [http://localhost:4000](http://localhost:4000)*
+
+- **Terminal 2 (Frontend UI):**
+  ```powershell
+  npm run dev:frontend
+  ```
+  *Runs on [http://localhost:3000](http://localhost:3000)*
+
+#### Option B: Docker Containers
+To run both backend and frontend inside containers:
+```powershell
+npm run apps:up
+```
+*(To stop apps: `npm run apps:down`)*
+
+Or to start everything (infrastructure + apps) together:
+```powershell
+npm run compose:up
+```
+
+---
+
+## 4. Default Seed Credentials
+
+After running `npm run db:seed`, sign in with these pre-configured accounts:
+
+| Portal | Email | Password | URL |
+|---|---|---|---|
+| **Super Admin** | `admin@photostudio.io` | `admin123456` | [http://localhost:3000/admin/dashboard](http://localhost:3000/admin/dashboard) |
+| **Studio Owner** | `owner@lumina.com` | `studio123456` | [http://localhost:3000/studio/dashboard](http://localhost:3000/studio/dashboard) |
+| **Customer** | `sarah.client@example.com` | `customer123456` | [http://localhost:3000/customer/galleries](http://localhost:3000/customer/galleries) |
+
+---
+
+## 5. NPM Script Reference
+
+| Command | Action |
+|---|---|
+| `npm run dev:backend` | Start Express backend in development mode (`nodemon`) |
+| `npm run dev:frontend` | Start React frontend in development mode (`vite`) |
+| `npm run build:backend` | Build / prepare Prisma for backend |
+| `npm run build:frontend` | Build frontend production bundle (`vite build`) |
+| `npm run test:backend` | Run backend test suites (`jest`) |
+| `npm run db:generate` | Generate Prisma 6 Client |
+| `npm run db:push` | Push schema changes directly to external PostgreSQL |
+| `npm run db:seed` | Seed default users, plans, studios, and events |
+| `npm run db:studio` | Launch Prisma Studio GUI browser |
+| `npm run infra:up` | Start Redis, RabbitMQ & SFTPGo containers |
+| `npm run infra:down` | Stop infrastructure containers |
+| `npm run apps:up` | Start backend & frontend containers |
+| `npm run apps:down` | Stop backend & frontend containers |
+| `npm run compose:up` | Start all services (infrastructure + apps) |
+| `npm run compose:down` | Stop all services |
