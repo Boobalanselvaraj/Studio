@@ -371,11 +371,13 @@ async function getAlbumById(req, res, next) {
         file_size_bytes: aa.asset.file_size_bytes ? aa.asset.file_size_bytes.toString() : '0',
         thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
         created_at: aa.asset.created_at,
+        is_favorite: Boolean(aa.is_favorite),
       }));
 
     const grant = await prisma.album_customers.findFirst({where:{album_id:album.id,customer:{user_id:req.user.id}}});
     const firstAsset = assets[0];
     const coverUrl = firstAsset ? firstAsset.thumbnailUrl : null;
+    const favoriteAssetIds = assets.filter((a) => a.is_favorite).map((a) => a.id);
 
     res.json({
       id: album.id,
@@ -393,6 +395,7 @@ async function getAlbumById(req, res, next) {
       photo_count: assets.length,
       cover: coverUrl,
       assets: assets,
+      favorites: favoriteAssetIds,
     });
   } catch (err) {
     next(err);
@@ -494,10 +497,14 @@ async function downloadAsset(req, res, next) {
 async function downloadAlbumZip(req, res, next) {
   try {
     const { albumId } = req.params;
+    const favoritesOnly = req.query.favorites === 'true' || req.query.favorites === '1';
     const album = await prisma.albums.findFirst({
       where: { id: albumId, ...albumAccessWhere(req.user.id), album_customers:{some:{can_download:true,customer:{user_id:req.user.id}}} },
       include: {
-        album_assets: { include: { asset: true } },
+        album_assets: {
+          where: favoritesOnly ? { is_favorite: true } : undefined,
+          include: { asset: true },
+        },
       },
     });
 
@@ -505,11 +512,17 @@ async function downloadAlbumZip(req, res, next) {
       return res.status(404).json({ error: 'Album not found or download unauthorized' });
     }
 
+    if (favoritesOnly && (!album.album_assets || album.album_assets.length === 0)) {
+      return res.status(400).json({ error: 'No favorite photos to download in this album' });
+    }
+
     const archiver = require('archiver');
+    const path = require('path');
     const zip = archiver('zip', { zlib: { level: 5 } });
 
+    const zipSuffix = favoritesOnly ? 'favorites' : 'photos';
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${album.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_photos.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${album.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_${zipSuffix}.zip"`);
 
     zip.on('error', error => res.destroy(error));
     res.on('close', () => zip.abort());
@@ -517,11 +530,29 @@ async function downloadAlbumZip(req, res, next) {
 
     for (const item of album.album_assets) {
       if (item.asset && !item.asset.is_soft_deleted) {
-        const provider=await prisma.storage_providers.findFirst({where:{id:item.asset.storage_provider_id,studio_id:album.studio_id},include:{storage_credentials:true}});
-        if(!provider || !item.asset.object_key) throw new Error('Original is not available in configured storage');
-        const stream=await require('../services/storageAdapters').readObject(provider,item.asset.object_key);
-        stream.on('error', error=>zip.destroy(error));
-        zip.append(stream,{name:item.asset.id+'_'+require('path').basename(item.asset.filename)});
+        if (item.asset.storage_provider_id && item.asset.object_key) {
+          const provider = await prisma.storage_providers.findFirst({
+            where: { id: item.asset.storage_provider_id, studio_id: album.studio_id },
+            include: { storage_credentials: true },
+          });
+          if (provider) {
+            try {
+              const stream = await require('../services/storageAdapters').readObject(provider, item.asset.object_key);
+              stream.on('error', error => zip.destroy(error));
+              zip.append(stream, { name: item.asset.id + '_' + path.basename(item.asset.filename) });
+              continue;
+            } catch (err) {
+              console.warn('[downloadAlbumZip] error reading remote object:', err);
+            }
+          }
+        }
+        if (item.asset.original_path) {
+          const fs = require('fs');
+          const p = path.resolve(process.cwd(), item.asset.original_path);
+          if (fs.existsSync(p)) {
+            zip.file(p, { name: item.asset.id + '_' + path.basename(item.asset.filename) });
+          }
+        }
       }
     }
 

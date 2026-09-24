@@ -1,5 +1,6 @@
 import { MediaBrowser, MediaViewer } from '../../../components/gallery/MediaBrowser';
 import { ShareQr } from '../../../components/gallery/ShareQr';
+import { StorageTreeExplorer } from '../../../components/gallery/StorageTreeExplorer';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   FolderOpen,
@@ -35,6 +36,7 @@ import {
   List,
   UploadCloud,
   CheckCircle2,
+  Rocket,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PageHeading, Photo } from '../../../components/workspace/shared';
@@ -80,6 +82,29 @@ export function FoldersPage() {
   const [folderToDelete, setFolderToDelete] = useState(null);
   const [deleteFolderModal, setDeleteFolderModal] = useState(false);
   const [deleteFolderBusy, setDeleteFolderBusy] = useState(false);
+
+  // Publish folder as client gallery modal state
+  const [publishFolderModal, setPublishFolderModal] = useState(false);
+  const [publishFolderTitle, setPublishFolderTitle] = useState('');
+  const [publishFolderBusy, setPublishFolderBusy] = useState(false);
+
+  const handlePublishFolder = async (e) => {
+    e.preventDefault();
+    if (!selectedFolder) return;
+    try {
+      setPublishFolderBusy(true);
+      const res = await foldersApi.publishGallery(selectedFolder.id, {
+        title: publishFolderTitle.trim() || undefined,
+      });
+      toast.success(res.message || `Published '${publishFolderTitle}' to Client Gallery!`);
+      setPublishFolderModal(false);
+      await loadTree();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to publish gallery');
+    } finally {
+      setPublishFolderBusy(false);
+    }
+  };
 
   // Server & Camera Explorer state
   const [explorerData, setExplorerData] = useState({
@@ -470,349 +495,30 @@ export function FoldersPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: FILE SERVER & CAMERA TREE EXPLORER                                 */}
+      {/* TAB 1: FILE SERVER & CAMERA TREE EXPLORER (WINSCP / FILEZILLA WORKSTATION) */}
       {/* ========================================================================= */}
       {activeTab === 'tree' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* LEFT SIDEBAR: Interactive Server & Camera Tree View */}
-          <div className="lg:col-span-4 panel p-4 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h3 className="text-sm font-bold flex items-center gap-2 text-foreground">
-                <Server size={16} className="text-brand-primary" />
-                Storage Server & Device Hierarchy
-              </h3>
-              <button
-                onClick={loadExplorerData}
-                disabled={explorerLoading}
-                className="text-xs text-muted hover:text-brand-primary p-1 rounded"
-                title="Refresh tree"
-              >
-                <RefreshCw size={13} className={explorerLoading ? 'animate-spin' : ''} />
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              {/* Root "All Files" */}
-              <div
-                onClick={() => {
-                  setTreeFilterType('all');
-                  setTreeFilterId(null);
-                }}
-                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-sm font-medium transition-colors ${
-                  treeFilterType === 'all'
-                    ? 'bg-brand-primary/10 text-brand-primary font-bold border border-brand-primary/30'
-                    : 'text-foreground hover:bg-surface-2'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Layers size={16} className="text-brand-primary" />
-                  <span>All Media Files</span>
-                </div>
-                <span className="text-xs bg-surface-muted px-2 py-0.5 rounded-full text-muted">
-                  {explorerData.assets?.length || 0}
-                </span>
-              </div>
-
-              {/* SECTION: Connected Storage Servers / External Nodes */}
-              <div className="pt-3">
-                <div
-                  onClick={() => setTreeExpanded((p) => ({ ...p, servers: !p.servers }))}
-                  className="flex items-center justify-between px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-muted cursor-pointer hover:text-foreground"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <HardDrive size={13} className="text-indigo-400" />
-                    External Storage Nodes ({explorerData.providers?.length || 0})
-                  </span>
-                  {treeExpanded.servers ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
-
-                {treeExpanded.servers && (
-                  <div className="space-y-1 pl-2 pt-1">
-                    {(!explorerData.providers || explorerData.providers.length === 0) && (
-                      <Link
-                        to="/studio/storage"
-                        className="flex items-center gap-1.5 p-2 rounded-lg text-xs text-muted hover:text-brand-primary hover:bg-surface-2 transition-colors border border-dashed border-border"
-                      >
-                        <Plus size={13} />
-                        <span>Connect MinIO, Wasabi, S3</span>
-                      </Link>
-                    )}
-
-                    {explorerData.providers?.map((prov) => {
-                      const count = (explorerData.assets || []).filter(
-                        (a) => a.storage_provider?.id === prov.id
-                      ).length;
-
-                      return (
-                        <div
-                          key={prov.id}
-                          onClick={() => {
-                            setTreeFilterType('provider');
-                            setTreeFilterId(prov.id);
-                          }}
-                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                            treeFilterType === 'provider' && treeFilterId === prov.id
-                              ? 'bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/30'
-                              : 'text-foreground hover:bg-surface-2'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <span
-                              className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                                prov.health === 'ok' ? 'bg-emerald-500' : 'bg-amber-400'
-                              }`}
-                            />
-                            <span className="truncate">{prov.name}</span>
-                            <span className="text-[10px] uppercase font-mono px-1 rounded bg-surface-muted text-muted">
-                              {prov.backend}
-                            </span>
-                          </div>
-                          <span className="text-xs bg-surface-muted px-1.5 py-0.5 rounded text-muted">
-                            {count}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* SECTION: Connected Tethered Cameras */}
-              <div className="pt-3">
-                <div
-                  onClick={() => setTreeExpanded((p) => ({ ...p, cameras: !p.cameras }))}
-                  className="flex items-center justify-between px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-muted cursor-pointer hover:text-foreground"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Camera size={13} className="text-emerald-500" />
-                    Wi-Fi Cameras & Tethering ({explorerData.cameras?.length || 0})
-                  </span>
-                  {treeExpanded.cameras ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
-
-                {treeExpanded.cameras && (
-                  <div className="space-y-1 pl-2 pt-1">
-                    {explorerData.cameras?.map((cam) => {
-                      const count = (explorerData.assets || []).filter(
-                        (a) => a.camera?.id === cam.id
-                      ).length;
-
-                      return (
-                        <div
-                          key={cam.id}
-                          onClick={() => {
-                            setTreeFilterType('camera');
-                            setTreeFilterId(cam.id);
-                          }}
-                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                            treeFilterType === 'camera' && treeFilterId === cam.id
-                              ? 'bg-emerald-500/10 text-emerald-500 font-bold border border-emerald-500/30'
-                              : 'text-foreground hover:bg-surface-2'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <span
-                              className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                                cam.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
-                              }`}
-                            />
-                            <span className="truncate">{cam.name}</span>
-                            <span className="text-[10px] text-muted truncate">({cam.model})</span>
-                          </div>
-                          <span className="text-xs bg-surface-muted px-1.5 py-0.5 rounded text-muted">
-                            {count}
-                          </span>
-                        </div>
-                      );
-                    })}
-
-                    {explorerData.cameras?.length === 0 && (
-                      <p className="text-xs text-muted italic px-2 py-1">No cameras registered yet.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* SECTION: Shoot Albums */}
-              <div className="pt-3">
-                <div
-                  onClick={() => setTreeExpanded((p) => ({ ...p, albums: !p.albums }))}
-                  className="flex items-center justify-between px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-muted cursor-pointer hover:text-foreground"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <FolderOpen size={13} className="text-amber-500" />
-                    Shoot Collections ({explorerData.albums?.length || 0})
-                  </span>
-                  {treeExpanded.albums ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
-
-                {treeExpanded.albums && (
-                  <div className="space-y-1 pl-2 pt-1 max-h-48 overflow-y-auto">
-                    {explorerData.albums?.map((alb) => (
-                      <div
-                        key={alb.id}
-                        onClick={() => {
-                          setTreeFilterType('album');
-                          setTreeFilterId(alb.id);
-                        }}
-                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-colors ${
-                          treeFilterType === 'album' && treeFilterId === alb.id
-                            ? 'bg-amber-500/10 text-amber-500 font-bold border border-amber-500/30'
-                            : 'text-foreground hover:bg-surface-2'
-                        }`}
-                      >
-                        <span className="truncate">📁 {alb.title}</span>
-                        {alb.is_published && (
-                          <span className="text-[10px] px-1 rounded bg-emerald-500/20 text-emerald-600 font-semibold">
-                            Published
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Helper / Server purchase info */}
-            <div className="p-3 bg-surface-muted rounded-xl border border-border text-xs space-y-1.5">
-              <div className="font-semibold flex items-center gap-1 text-foreground">
-                <Server size={13} className="text-brand-primary" /> External Servers Managed
-              </div>
-              <p className="text-muted text-[11px] leading-relaxed">
-                Connect external Wasabi, MinIO, or SFTP servers in Storage Settings. Files uploaded from tethered cameras are indexed here in real time.
-              </p>
-              <Link
-                to="/studio/storage"
-                className="inline-flex items-center gap-1 text-brand-primary font-semibold hover:underline text-[11px]"
-              >
-                Configure Storage Servers <ArrowUpRight size={12} />
-              </Link>
-            </div>
-          </div>
-
-          {/* RIGHT STAGE: Files Grid / Explorer List */}
-          <div className="lg:col-span-8 space-y-4">
-            {/* Explorer Toolbar */}
-            <div className="panel p-4 space-y-3">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                    {treeFilterType === 'all' && 'All Ingested Photos & Media'}
-                    {treeFilterType === 'provider' && `Server: ${treeFilterId}`}
-                    {treeFilterType === 'camera' && `Camera Source: ${treeFilterId}`}
-                    {treeFilterType === 'album' && `Shoot Album: ${treeFilterId}`}
-                  </span>
-                  <span className="text-xs bg-surface-muted px-2 py-0.5 rounded-full text-muted">
-                    {filteredAssets.length} item(s)
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  {/* View mode toggle */}
-                  <div className="flex items-center bg-surface-muted p-0.5 rounded-lg border border-border">
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-1.5 rounded ${
-                        viewMode === 'grid' ? 'bg-surface-2 text-foreground shadow-sm' : 'text-muted'
-                      }`}
-                      title="Grid View"
-                    >
-                      <Grid size={15} />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('table')}
-                      className={`p-1.5 rounded ${
-                        viewMode === 'table' ? 'bg-surface-2 text-foreground shadow-sm' : 'text-muted'
-                      }`}
-                      title="List View"
-                    >
-                      <List size={15} />
-                    </button>
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectAllFiltered}
-                    disabled={filteredAssets.length === 0}
-                  >
-                    {selectedAssetIds.length === filteredAssets.length && filteredAssets.length > 0 ? (
-                      <>
-                        <CheckSquare size={14} className="mr-1 text-brand-primary" /> Deselect All
-                      </>
-                    ) : (
-                      <>
-                        <Square size={14} className="mr-1" /> Select All ({filteredAssets.length})
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Filters & Search Row */}
-              <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-border">
-                <div className="relative flex-1 w-full">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search file name, camera model, or storage host…"
-                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-surface-2 rounded-lg border border-border text-foreground focus:outline-none focus:border-brand-primary"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <Filter size={14} className="text-muted" />
-                  <select
-                    value={formatFilter}
-                    onChange={(e) => setFormatFilter(e.target.value)}
-                    className="text-xs bg-surface-2 px-2.5 py-1.5 rounded-lg border border-border text-foreground"
-                  >
-                    <option value="all">All File Formats</option>
-                    <option value="raw">RAW Only (ARW, CR3, NEF)</option>
-                    <option value="jpg">JPEG / JPG</option>
-                    <option value="png">PNG</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Batch Action Floating Header when files selected */}
-            {selectedAssetIds.length > 0 && (
-              <div className="p-3 bg-brand-primary/10 border border-brand-primary/30 rounded-xl flex items-center justify-between gap-3 text-xs text-brand-primary animate-in fade-in duration-150">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={16} />
-                  <span>
-                    <strong>{selectedAssetIds.length}</strong> photo(s) selected
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-brand-primary text-white hover:opacity-95"
-                    onClick={() => setAssignModalOpen(true)}
-                  >
-                    <UserCheck size={14} className="mr-1" />
-                    Assign to Client & Shoot Album
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedAssetIds([])}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Files Main View */}
-            <MediaBrowser assets={filteredAssets} selectedIds={selectedAssetIds} onSelect={toggleSelectAsset} onRename={setRenameAsset} onRemove={setRemoveAsset}/>
-
-          </div>
-        </div>
+        <StorageTreeExplorer
+          assets={explorerData.assets || []}
+          providers={explorerData.providers || []}
+          cameras={explorerData.cameras || []}
+          albums={explorerData.albums || []}
+          folders={explorerData.folders || tree || []}
+          selectedIds={selectedAssetIds}
+          onSelectId={toggleSelectAsset}
+          onSelectMultiple={setSelectedAssetIds}
+          onClearSelection={() => setSelectedAssetIds([])}
+          onCreateAlbumFromSelection={(ids) => {
+            setSelectedAssetIds(ids);
+            setAssignModalOpen(true);
+          }}
+          onAssignFromSelection={(ids) => {
+            setSelectedAssetIds(ids);
+            setAssignModalOpen(true);
+          }}
+          isLoading={explorerLoading || syncing}
+          onRefresh={handleSyncStorage}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -1175,13 +881,9 @@ export function FoldersPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={async () => {
-                          try {
-                            const res = await foldersApi.publishGallery(selectedFolder.id);
-                            toast.success(res.message || 'Published to client galleries successfully!');
-                          } catch (err) {
-                            toast.error(err.response?.data?.error || 'Failed to publish gallery');
-                          }
+                        onClick={() => {
+                          setPublishFolderTitle(selectedFolder.name.replace(/_/g, ' '));
+                          setPublishFolderModal(true);
                         }}
                       >
                         <ArrowUpRight size={14} className="mr-1 text-brand-primary" />
@@ -1461,6 +1163,64 @@ export function FoldersPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* MODAL: PUBLISH FOLDER AS CLIENT GALLERY */}
+      <Modal
+        open={publishFolderModal}
+        onOpenChange={setPublishFolderModal}
+        title="Publish Folder as Client Gallery"
+        description="Make photos in this folder available in the client proofing portal."
+      >
+        <form onSubmit={handlePublishFolder} className="form-stack space-y-4">
+          <div className="p-3 bg-surface-muted rounded-xl border border-border flex items-center justify-between text-xs">
+            <div>
+              <strong className="text-foreground">{selectedFolder?.name}</strong>
+              <p className="text-muted text-[11px] mt-0.5">
+                {selectedFolder?.assets?.length || 0} photo(s) will be included in the published gallery.
+              </p>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Delivery
+            </span>
+          </div>
+
+          <label className="text-xs font-semibold text-foreground">
+            Client Gallery Name *
+            <input
+              required
+              maxLength={100}
+              value={publishFolderTitle}
+              onChange={(e) => setPublishFolderTitle(e.target.value)}
+              placeholder="e.g. Smith Wedding - Highlights"
+              className="w-full text-xs p-2 rounded-lg bg-surface-2 border border-border mt-1"
+            />
+          </label>
+
+          <p className="text-[11px] text-muted">
+            ℹ️ Publishing creates a live client gallery collection. Assigned clients can log in to view and proof these photos. You can also generate expiring guest share links.
+          </p>
+
+          <div className="modal-actions pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={publishFolderBusy}
+              onClick={() => setPublishFolderModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={publishFolderBusy || !publishFolderTitle.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            >
+              {publishFolderBusy ? <Loader2 size={15} className="animate-spin mr-1" /> : <Rocket size={15} className="mr-1" />}
+              Publish Gallery Now
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Delete Folder Confirm Modal */}

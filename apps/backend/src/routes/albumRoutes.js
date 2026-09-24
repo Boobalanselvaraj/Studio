@@ -8,6 +8,7 @@ router.post('/', requireStudioRole(['studio_owner', 'studio_manager', 'photograp
 router.get('/:id', albumController.getAlbumById);
 router.patch('/:id', requireStudioRole(['studio_owner', 'studio_manager']), albumController.updateAlbum);
 router.delete('/:id', requireStudioRole(['studio_owner', 'studio_manager']), albumController.deleteAlbum);
+router.get('/:id/download', albumController.downloadAlbumZip);
 router.post('/:id/assets', requireStudioRole(['studio_owner', 'studio_manager', 'photographer']), albumController.addAssetsToAlbum);
 router.delete('/:id/assets/:assetId', requireStudioRole(['studio_owner', 'studio_manager', 'photographer']), albumController.removeAssetFromAlbum);
 

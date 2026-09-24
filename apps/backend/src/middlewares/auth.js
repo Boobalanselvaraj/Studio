@@ -16,10 +16,16 @@ async function authenticate(req, res, next) {
       }
     }
 
-    // 2. Check Authorization Bearer header
+    // 2. Check Authorization Bearer header or query token
     const authHeader = req.headers.authorization;
+    let token = null;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
+      token = authHeader.split(' ')[1];
+    } else if (req.query && req.query.token) {
+      token = req.query.token;
+    }
+
+    if (token) {
       const decoded = jwt.verify(token, env.JWT_SECRET);
       
       const user = await prisma.users.findUnique({

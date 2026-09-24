@@ -201,6 +201,14 @@ export const albumsApi = {
     const res = await api.delete(`/studio/albums/${id}`);
     return res.data;
   },
+  publish: async (id) => {
+    const res = await api.patch(`/studio/albums/${id}`, { is_published: true });
+    return res.data;
+  },
+  unpublish: async (id) => {
+    const res = await api.patch(`/studio/albums/${id}`, { is_published: false });
+    return res.data;
+  },
   addAssets: async (id, assetIds) => {
     const res = await api.post(`/studio/albums/${id}/assets`, { asset_ids: assetIds });
     return res.data;
@@ -208,6 +216,22 @@ export const albumsApi = {
   removeAsset: async (id, assetId) => {
     const res = await api.delete(`/studio/albums/${id}/assets/${assetId}`);
     return res.data;
+  },
+  downloadZip: async (id, favoritesOnly = false) => {
+    const res = await api.get(`/studio/albums/${id}/download${favoritesOnly ? '?favorites=true' : ''}`, {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+  getDownloadUrl: (id, favoritesOnly = false) => {
+    const token = localStorage.getItem('token');
+    const studioId = localStorage.getItem('currentStudioId');
+    const params = new URLSearchParams();
+    if (favoritesOnly) params.append('favorites', 'true');
+    if (token) params.append('token', token);
+    if (studioId) params.append('studioId', studioId);
+    const qs = params.toString();
+    return `/api/studio/albums/${id}/download${qs ? `?${qs}` : ''}`;
   },
 };
 
@@ -429,4 +453,35 @@ export const customerPortalApi = {
     const res = await api.get(`/customer/albums/${id}`);
     return res.data;
   },
+  toggleFavorite: async (albumId, assetId, isFavorite) => {
+    const res = await api.post(`/customer/albums/${albumId}/assets/${assetId}/favorite`, {
+      is_favorite: isFavorite,
+    });
+    return res.data;
+  },
+  downloadZip: async (id, favoritesOnly = false) => {
+    const res = await api.get(`/customer/albums/${id}/download${favoritesOnly ? '?favorites=true' : ''}`, {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+  getDownloadUrl: (id, favoritesOnly = false) => {
+    const token = localStorage.getItem('token');
+    const params = new URLSearchParams();
+    if (favoritesOnly) params.append('favorites', 'true');
+    if (token) params.append('token', token);
+    const qs = params.toString();
+    return `/api/customer/albums/${id}/download${qs ? `?${qs}` : ''}`;
+  },
 };
+
+export function triggerFileDownload(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

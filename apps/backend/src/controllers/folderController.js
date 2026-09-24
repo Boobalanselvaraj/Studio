@@ -430,7 +430,7 @@ async function deleteFolder(req, res, next) {
 
 async function getServerExplorerData(req, res, next) {
   try {
-    const [assets, providers, cameras, albums, customers] = await Promise.all([
+    const [assets, providers, cameras, albums, customers, folders] = await Promise.all([
       prisma.assets.findMany({
         where: {
           studio_id: req.studioId,
@@ -462,9 +462,24 @@ async function getServerExplorerData(req, res, next) {
         where: { studio_id: req.studioId },
         include: { user: { select: { id: true, full_name: true, email: true } } },
       }),
+      prisma.folders.findMany({
+        where: { studio_id: req.studioId },
+        include: { folder_items: true },
+        orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+      }),
     ]);
 
     const camerasMap = new Map((cameras || []).map((c) => [c.id, { id: c.id, name: c.name, model: c.model }]));
+
+    const assetFoldersMap = new Map();
+    (folders || []).forEach((f) => {
+      (f.folder_items || []).forEach((fi) => {
+        if (fi.item_type === 'asset') {
+          if (!assetFoldersMap.has(fi.item_id)) assetFoldersMap.set(fi.item_id, []);
+          assetFoldersMap.get(fi.item_id).push({ id: f.id, name: f.name });
+        }
+      });
+    });
 
     const formattedAssets = assets.map((a) => ({
       id: a.id,
@@ -473,10 +488,12 @@ async function getServerExplorerData(req, res, next) {
       file_size_bytes: a.file_size_bytes ? a.file_size_bytes.toString() : '0',
       created_at: a.created_at,
       original_path: a.original_path,
+      object_key: a.object_key || a.original_path,
       url: `/api/studio/folders/assets/${a.id}/view`,
       camera: a.camera_id ? (camerasMap.get(a.camera_id) || null) : null,
       storage_provider: a.storage_provider || null,
       albums: a.album_assets.map((aa) => aa.album),
+      folders: assetFoldersMap.get(a.id) || [],
     }));
 
     res.json({
@@ -484,6 +501,7 @@ async function getServerExplorerData(req, res, next) {
       providers,
       cameras,
       albums,
+      folders,
       customers: customers.map((c) => ({
         id: c.id,
         name: c.user?.full_name || 'Customer',

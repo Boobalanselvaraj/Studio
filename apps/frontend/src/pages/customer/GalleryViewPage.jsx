@@ -46,6 +46,7 @@ export function GalleryViewPage() {
               ...a,
               id: a.id,
               filename: a.filename,
+              is_favorite: Boolean(a.is_favorite),
               thumbnailUrl: a.thumbnailUrl || `/api/customer/assets/${a.id}/view`,
             }))
           );
@@ -56,6 +57,7 @@ export function GalleryViewPage() {
               .map((aa) => ({
                 id: aa.asset.id,
                 filename: aa.asset.filename,
+                is_favorite: Boolean(aa.is_favorite),
                 thumbnailUrl: `/api/customer/assets/${aa.asset.id}/view`,
               }))
           );
@@ -215,10 +217,13 @@ export function GalleryViewPage() {
       </div>
 
       {collection.can_share && <div className="panel p-5 mb-6"><Button disabled={shareBusy} onClick={async()=>{try{setShareBusy(true);const {data}=await api.post('/customer/albums/'+albumId+'/share');setShareUrl(data.share_url);}catch(e){toast.error(e.response?.data?.error||'Could not share album');}finally{setShareBusy(false);}}}>Create guest link & QR</Button>{shareUrl&&<><a className="block break-all mt-3" href={shareUrl}>{shareUrl}</a><ShareQr url={shareUrl} title={collection.title}/></>}</div>}
-      <CustomerGallery canDownload={collection.can_download} canFavorite={collection.can_favorite}
+      <CustomerGallery
+        canDownload={collection.can_download}
+        canFavorite={collection.can_favorite}
         key={albumId}
         galleryId={albumId}
         assets={displayAssets}
+        initialFavorites={collection.favorites || []}
       />
     </>
   );

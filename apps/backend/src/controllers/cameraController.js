@@ -334,8 +334,42 @@ async function uploadCameraPhoto(req, res, next) {
       if (provider) storageProviderId = provider.id;
     }
 
-    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const objectKey = `${req.studioId}/${camera.id}/${Date.now()}-${safeName}`;
+    const { sanitizePathSegment } = require('../services/cameraIngest');
+    const studio = await prisma.studios.findUnique({
+      where: { id: req.studioId },
+      select: { slug: true, name: true },
+    });
+    const studioFolder = sanitizePathSegment(studio?.slug || studio?.name, 'studio');
+
+    let folderCategory = '';
+    if (camera.album_id) {
+      const album = await prisma.albums.findFirst({
+        where: { id: camera.album_id, studio_id: req.studioId },
+        select: { id: true, title: true },
+      });
+      if (album && album.title) {
+        folderCategory = `Albums/${sanitizePathSegment(album.title, 'Album-' + album.id.slice(0, 8))}`;
+      }
+    }
+
+    if (!folderCategory) {
+      const cameraFolder = sanitizePathSegment(camera.name || camera.sftpgo_username, 'Camera-' + camera.id.slice(0, 8));
+      const shootDate = new Date().toISOString().slice(0, 10);
+      folderCategory = `Cameras/${cameraFolder}/${shootDate}`;
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    const stem = sanitizePathSegment(path.basename(filename, ext), 'photo');
+    const safeName = `${stem}${ext}`;
+    let objectKey = `${studioFolder}/${folderCategory}/${safeName}`;
+
+    const existingAsset = await prisma.assets.findFirst({
+      where: { studio_id: req.studioId, object_key: objectKey },
+      select: { id: true },
+    });
+    if (existingAsset) {
+      objectKey = `${studioFolder}/${folderCategory}/${stem}_${Date.now().toString().slice(-4)}${ext}`;
+    }
 
     let actualBytes = declaredSize;
     if (provider) {

@@ -9,6 +9,8 @@ async function resolveTenant(req, res, next) {
 
     if (studioIdHeader) {
       studioId = studioIdHeader;
+    } else if (req.query && req.query.studioId) {
+      studioId = req.query.studioId;
     } else if (studioSlug) {
       const studio = await prisma.studios.findFirst({
         where: { slug: studioSlug, is_active: true },
