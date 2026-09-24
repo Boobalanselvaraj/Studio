@@ -46,10 +46,7 @@ async function listStudios(req, res, next) {
           where: {
             studio_id: st.id,
             is_soft_deleted: false,
-            OR: [
-              { storage_provider_id: null },
-              { storage_provider: { provider_type: 'platform' } },
-            ],
+            storage_provider_id: {not:null},
           },
           _sum: { file_size_bytes: true },
         });
@@ -68,8 +65,8 @@ async function listStudios(req, res, next) {
         return {
           ...st,
           liveMetrics: {
-            platformUsedBytes: bytes,
-            platformUsedGb: parseFloat((bytes / (1024 * 1024 * 1024)).toFixed(2)),
+            externalUsedBytes: bytes,
+            externalUsedGb: parseFloat((bytes / (1024 * 1024 * 1024)).toFixed(2)),
             reservedCameras: reservedCams,
           },
         };
@@ -179,7 +176,7 @@ async function createStudio(req, res, next) {
           data: {
             studio_id: s.id,
             name: dedicated_server.name || 'Dedicated Studio Server',
-            provider_type: 'platform',
+            provider_type: 'studio_owned',
             backend: dedicated_server.backend, // 'sftp' | 'ftp' | 's3'
             is_default: true,
             is_enabled: true,
@@ -614,7 +611,7 @@ async function provisionPlatformStorage(req, res, next) {
         data: {
           studio_id: studioId,
           name: name.trim(),
-          provider_type: 'platform',
+          provider_type: 'studio_owned',
           backend,
           is_default: !!is_default,
           is_enabled: true,

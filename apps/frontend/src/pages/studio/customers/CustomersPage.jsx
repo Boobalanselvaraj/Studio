@@ -1,3 +1,4 @@
+import { ShareQr } from '../../../components/gallery/ShareQr';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
@@ -25,6 +26,7 @@ import {
   Clock,
   UserCheck,
 } from 'lucide-react';
+import { toast } from '../../../components/ui/toast';
 import api from '../../../api/client';
 import { PageHeading } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
@@ -60,6 +62,7 @@ export function CustomersPage() {
   const [newTempPass, setNewTempPass] = useState('');
 
   // Register form
+  const [formPassword, setFormPassword] = useState('');
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
@@ -68,6 +71,7 @@ export function CustomersPage() {
 
   // Share form (Private Account Access)
   const [selectedAlbumId, setSelectedAlbumId] = useState('');
+  const [canShare,setCanShare]=useState(false);
   const [canDownload, setCanDownload] = useState(true);
   const [canFavorite, setCanFavorite] = useState(true);
 
@@ -123,6 +127,7 @@ export function CustomersPage() {
       setBusy(true);
       setError('');
       const created = await customersApi.create({
+        password: formPassword || undefined,
         full_name: formName.trim(),
         email: formEmail.trim(),
         phone: formPhone.trim() || undefined,
@@ -130,6 +135,7 @@ export function CustomersPage() {
         notes: formNotes.trim() || undefined,
       });
 
+      setFormPassword('');
       setFormName('');
       setFormEmail('');
       setFormPhone('');
@@ -160,6 +166,7 @@ export function CustomersPage() {
       await customersApi.shareAlbum({
         customer_id: selectedCustomer.id,
         album_id: selectedAlbumId,
+        can_share: canShare,
         can_download: canDownload,
         can_favorite: canFavorite,
       });
@@ -612,7 +619,7 @@ export function CustomersPage() {
           </label>
 
           <label className="text-xs font-semibold text-foreground">
-            Email Address *
+            Email / Login Username *
             <input
               required
               type="email"
@@ -624,6 +631,10 @@ export function CustomersPage() {
             />
           </label>
 
+          <label className="text-xs font-semibold text-foreground">
+            Portal Password (8–72 characters; leave blank to generate)
+            <input type="password" autoComplete="new-password" minLength={8} maxLength={72} value={formPassword} onChange={e=>setFormPassword(e.target.value)} className="w-full text-xs p-2 rounded-lg bg-surface-2 border border-border" />
+          </label>
           <label className="text-xs font-semibold text-foreground">
             Phone Number (Optional)
             <input
@@ -667,29 +678,18 @@ export function CustomersPage() {
       {/* MODAL: ASSIGN GALLERY TO CLIENT (PRIVATE ACCOUNT ACCESS)                  */}
       {/* ========================================================================= */}
       <Modal
+        size="wide"
         open={openShareModal}
         onOpenChange={setOpenShareModal}
         title={`Assign Gallery to ${selectedCustomer?.full_name || 'Client'}`}
         description="Grant secure gallery access with custom download and favoriting privileges."
       >
         <form onSubmit={handleShareAlbum} className="form-stack space-y-4">
-          <label className="text-xs font-semibold text-foreground">
-            Select Shoot Gallery *
-            <Select
-              value={selectedAlbumId}
-              onChange={(e) => setSelectedAlbumId(e.target.value)}
-              placeholder="Choose a gallery…"
-              options={albums.map((alb) => ({
-                value: alb.id,
-                label: `📁 ${alb.title}`,
-                description: `${alb.album_assets?.length || 0} photos · ${alb.is_published ? 'Published' : 'Draft'}`,
-              }))}
-            />
-          </label>
-
+          <fieldset><legend className="text-sm font-semibold mb-3">Choose a gallery</legend><div className="assignment-grid">{albums.map(alb=>{const cover=alb.album_assets?.find(aa=>aa.asset_id===alb.cover_asset_id)?.asset||alb.album_assets?.[0]?.asset;return <button type="button" className={selectedAlbumId===alb.id?'assignment-card is-selected':'assignment-card'} key={alb.id} onClick={()=>setSelectedAlbumId(alb.id)} aria-pressed={selectedAlbumId===alb.id}>{cover?<img loading="lazy" src={'/api/studio/folders/assets/'+cover.id+'/view'} alt=""/>:<div className="p-8 text-muted">No cover photo</div>}<span><strong>{alb.title}</strong><small>{alb.album_assets?.length||0} photos · {alb.is_published?'Published':'Draft'}</small></span></button>;})}</div>{!albums.length&&<p>Create an album before assigning a gallery.</p>}</fieldset>
           <div className="p-3 bg-surface-muted rounded-xl border border-border space-y-2">
             <p className="text-xs font-semibold text-foreground">Client Privileges</p>
             <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={canShare} onChange={e=>setCanShare(e.target.checked)}/>Allow customer to create a guest link and QR code</label>
               <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
                 <input
                   type="checkbox"
@@ -787,6 +787,7 @@ export function CustomersPage() {
                   {copiedKey === 'guest' ? 'Copied' : 'Copy'}
                 </Button>
               </div>
+              <ShareQr url={generatedGuestUrl}/>
               <p className="text-[11px] text-muted">
                 Guests can view photos and favorite them. Link expires automatically in {guestLinkExpiresHours} hours.
               </p>

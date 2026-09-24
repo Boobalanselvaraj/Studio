@@ -162,7 +162,7 @@ describe('admin and billing contracts', () => {
     });
   });
 
-  it('validates quota upgrade requests', async () => {
+  it('retires quota requests in favor of support tickets', async () => {
     mockStudioUser();
 
     const response = await request(app)
@@ -171,7 +171,7 @@ describe('admin and billing contracts', () => {
       .set('x-studio-id', studioId)
       .send({ requested_quota_gb: -1 });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/positive number/i);
+    expect(response.status).toBe(410);
+    expect(response.body.error).toMatch(/support tickets/i);
   });
 });

@@ -1,12 +1,13 @@
 const axios = require('axios');
-const base = process.env.SFTPGO_HOST || 'http://localhost:8080';
+const env = require('../config/env');
+const base = process.env.SFTPGO_HOST || env.SFTPGO_API_URL.replace(/\/api\/v2\/?$/, '');
 
 async function client() {
   try {
     const { data } = await axios.get(base + '/api/v2/token', {
       auth: {
         username: process.env.SFTPGO_ADMIN_USER || 'admin',
-        password: process.env.SFTPGO_ADMIN_PASSWORD || 'adminpassword',
+        password: process.env.SFTPGO_ADMIN_PASSWORD || 'password123',
       },
       timeout: 3000,
     });
@@ -18,29 +19,26 @@ async function client() {
     });
   } catch (err) {
     console.warn('[SFTPGo] Gateway connection note:', err.message);
-    return null;
+    throw new Error('SFTP gateway is unavailable or administrator authentication failed');
   }
 }
 
 async function provisionCameraUser({ username, password, studioSlug, cameraId }) {
   try {
     const api = await client();
-    if (!api) {
-      console.info(`[SFTPGo] Gateway offline. Registered camera user '${username}' in local storage mode.`);
-      return { status: 'provisioned_local', sftpgo_username: username, home_dir: `/storage/${studioSlug}/cameras/${username}` };
-    }
-    const { data } = await api.post('/users', {
+    const payload = {
       status: 1,
       username,
       password,
       home_dir: '/srv/sftpgo/data/' + (studioSlug || 'studio') + '/cameras/' + username,
-      permissions: { '/': ['list', 'upload', 'create_dirs', 'delete', 'download'] },
+      permissions: { '/': ['list', 'upload', 'overwrite', 'rename', 'create_dirs', 'delete', 'download'] },
       description: 'Studio camera ' + cameraId,
-    });
+    };
+    const { data } = await api.post('/users', payload);
     return { status: 'provisioned', sftpgo_username: data.username, home_dir: data.home_dir };
   } catch (err) {
-    console.warn(`[SFTPGo] Could not provision user '${username}' on remote gateway (${err.message}). Falling back to local.`);
-    return { status: 'provisioned_local', sftpgo_username: username, home_dir: `/storage/${studioSlug}/cameras/${username}` };
+    console.warn(`[SFTPGo] Could not provision user '${username}' on remote gateway (${err.message}).`);
+    throw new Error('SFTP user provisioning failed: ' + (err.response?.data?.message || err.message));
   }
 }
 
@@ -53,8 +51,7 @@ async function setCameraActive({ username, active }) {
     await api.put(endpoint, { ...data, status: active ? 1 : 0 });
     return { status: active ? 'enabled' : 'disabled', sftpgo_username: username };
   } catch (err) {
-    console.warn(`[SFTPGo] setCameraActive warning for '${username}':`, err.message);
-    return { status: active ? 'enabled' : 'disabled', sftpgo_username: username };
+    throw new Error('Could not update SFTP gateway user status');
   }
 }
 
@@ -71,10 +68,19 @@ async function deleteCameraUser({ username }) {
   }
 }
 
+async function repairCameraUser({username,password,studioSlug,cameraId,active}) {
+ const api=await client();const endpoint='/users/'+encodeURIComponent(username);
+ let current;
+ try{current=(await api.get(endpoint)).data;}catch(e){if(e.response?.status!==404)throw e;}
+ if(current && current.description !== 'Studio camera '+cameraId)throw new Error('Gateway username belongs to another resource; contact administrator');
+ const payload={...(current||{}),username,password,status:active?1:0,home_dir:'/srv/sftpgo/data/'+studioSlug+'/cameras/'+username,permissions:{'/':['list','upload','overwrite','rename','create_dirs','delete','download']},description:'Studio camera '+cameraId};
+ if(current)await api.put(endpoint,payload);else await api.post('/users',payload);
+}
 const retireCameraUser = ({ username }) => setCameraActive({ username, active: false });
 
 module.exports = {
   provisionCameraUser,
+  repairCameraUser,
   retireCameraUser,
   setCameraActive,
   deleteCameraUser,

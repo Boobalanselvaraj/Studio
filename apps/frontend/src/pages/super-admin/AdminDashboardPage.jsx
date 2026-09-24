@@ -257,7 +257,7 @@ export function AdminDashboardPage() {
             Studios Directory & Fleet Console
           </h2>
           <p className="text-sm text-muted">
-            Manage studio tenant accounts, customize operational storage and camera quotas, and issue transparent sales bills.
+            Manage studio tenant accounts, manage external server connections and camera access, and issue transparent sales bills.
           </p>
         </div>
 
@@ -360,7 +360,7 @@ export function AdminDashboardPage() {
                             variant="outline"
                             className="h-8 text-xs flex items-center gap-1"
                             onClick={() => openManage(s)}
-                            title="Edit studio storage quota, camera limits, and account status"
+                            title="Edit camera limits and account status"
                           >
                             <Edit2 size={13} /> Edit Studio
                           </Button>
@@ -523,7 +523,7 @@ export function AdminDashboardPage() {
           if (!v) setError('');
         }}
         title={`Edit Studio Settings — ${selectedStudio?.name || 'Studio'}`}
-        description="Update storage quota limit (GB), maximum camera connections limit, and operational account status."
+        description="Update camera connections and account status. Media stays on studio external servers."
       >
         <form className="form-stack space-y-4" onSubmit={handleManageSubmit}>
           {error && <p className="form-error">{error}</p>}

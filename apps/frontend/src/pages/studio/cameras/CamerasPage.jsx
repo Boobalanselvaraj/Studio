@@ -26,6 +26,9 @@ import {
   Download,
   Image,
   CheckCircle2,
+  Pause,
+  Play,
+  Archive,
 } from 'lucide-react';
 import api from '../../../api/client';
 import { PageHeading } from '../../../components/workspace/shared';
@@ -36,6 +39,7 @@ import { toast } from '../../../components/ui/toast';
 import { Select } from '../../../components/ui/select';
 import { camerasApi, storageApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
+import { Link } from 'react-router-dom';
 
 
 export function CamerasPage() {
@@ -47,6 +51,9 @@ export function CamerasPage() {
   const [loading, setLoading] = useState(true);
 
   const [selected, setSelected] = useState(null);
+  const [repairCamera,setRepairCamera]=useState(null);
+  const [repairPassword,setRepairPassword]=useState('');
+  const [repairError,setRepairError]=useState('');
   const [openModal, setOpenModal] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [guideTab, setGuideTab] = useState('sony');
@@ -177,6 +184,8 @@ export function CamerasPage() {
 
   const handleOpenRegister = () => {
     generateCredentials();
+    const defaultProv = providers.find((p) => p.is_default && p.is_enabled) || providers.find((p) => p.is_enabled);
+    setFormDestination(defaultProv ? defaultProv.id : '');
     setOpenModal(true);
   };
 
@@ -187,13 +196,18 @@ export function CamerasPage() {
       return;
     }
 
+    if (!formDestination) {
+      setError('Please select a connected remote storage server for this camera.');
+      return;
+    }
+
     try {
       setBusy(true);
       setError('');
       const created = await camerasApi.create({
         name: formName.trim(),
         model: formModel.trim() || undefined,
-        storage_provider_id: formDestination || undefined,
+        storage_provider_id: formDestination,
         upload_username: formUsername.trim(),
         upload_password: formPassword,
       });
@@ -521,78 +535,121 @@ export function CamerasPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {cameras.map((d) => (
             <section
-              className={`panel camera-card flex flex-col justify-between border transition-all ${
-                d.lifecycle === 'retired'
-                  ? 'opacity-60 bg-surface-2 border-border'
-                  : 'hover:border-brand-primary/40'
-              }`}
               key={d.id}
+              className={`panel p-5 rounded-2xl border flex flex-col justify-between transition-all duration-200 ${
+                d.lifecycle === 'retired'
+                  ? 'opacity-65 bg-surface-2/60 border-border'
+                  : 'bg-surface border-border hover:border-brand-primary/40 hover:shadow-md'
+              }`}
             >
               <div>
-                <div className="flex items-center justify-between pb-2 mb-3 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-surface-2 text-brand-primary">
-                      <Camera size={18} />
-                    </span>
-                    <div>
-                      <h3 className="font-semibold text-sm">{d.name}</h3>
-                      <span className="text-[11px] text-muted uppercase font-mono">
-                        {d.model || 'Studio Camera'}
-                      </span>
+                {/* Header */}
+                <div className="flex items-start justify-between pb-3.5 mb-3.5 border-b border-border/80">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-brand-primary/10 text-brand-primary flex items-center justify-center flex-shrink-0 shadow-xs">
+                      <Camera size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-sm sm:text-base text-foreground tracking-tight truncate leading-tight" title={d.name}>
+                        {d.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-muted font-medium truncate">
+                          {d.model || 'Studio Camera'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <span
-                    className={`text-[11px] px-2 py-0.5 rounded font-medium ${
+                    className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border flex-shrink-0 ml-2 ${
                       d.lifecycle === 'ready'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/50'
                         : d.lifecycle === 'retired'
-                        ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                        ? 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'
+                        : 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/50'
                     }`}
                   >
-                    {d.lifecycle === 'ready' ? 'Ready & Linked' : d.lifecycle}
+                    {d.lifecycle === 'ready' && (
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                    )}
+                    {d.lifecycle === 'retired' && <span className="h-1.5 w-1.5 rounded-full bg-zinc-400"></span>}
+                    {d.lifecycle !== 'ready' && d.lifecycle !== 'retired' && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                    )}
+                    {d.lifecycle === 'ready' ? 'Ready & Linked' : d.lifecycle === 'retired' ? 'Retired' : d.lifecycle}
                   </span>
                 </div>
 
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center py-1 px-2 rounded bg-surface-2">
-                    <span className="text-muted">Username:</span>
-                    <code className="font-mono font-medium text-foreground">
-                      {d.upload_username || d.sftpgo_username}
-                    </code>
+                {/* Metadata card */}
+                <div className="bg-surface-2/60 border border-border/70 rounded-xl p-3 divide-y divide-border/60 text-xs mb-3.5 space-y-2">
+                  <div className="flex items-center justify-between pt-0 pb-1">
+                    <span className="text-muted font-medium">Username</span>
+                    <div className="flex items-center gap-1.5">
+                      <code className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-surface border border-border/80 text-foreground">
+                        {d.upload_username || d.sftpgo_username}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(d.upload_username || d.sftpgo_username, `user-${d.id}`)}
+                        className="text-muted hover:text-brand-primary p-1 rounded hover:bg-surface transition-colors"
+                        title="Copy username"
+                      >
+                        {copied === `user-${d.id}` ? (
+                          <Check size={12} className="text-emerald-500" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {d.storage_provider && (
-                    <div className="flex justify-between items-center py-1 px-2 rounded bg-surface-2">
-                      <span className="text-muted">Destination:</span>
-                      <span className="font-medium flex items-center gap-1">
-                        <HardDrive size={12} className="text-blue-500" />
-                        {d.storage_provider.name} ({d.storage_provider.backend.toUpperCase()})
+                    <div className="flex items-center justify-between pt-2 pb-1">
+                      <span className="text-muted font-medium">Destination</span>
+                      <span className="font-medium text-foreground flex items-center gap-1.5">
+                        <HardDrive size={13} className="text-blue-500 flex-shrink-0" />
+                        <span className="truncate max-w-[130px]" title={d.storage_provider.name}>
+                          {d.storage_provider.name}
+                        </span>
+                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold border border-blue-200/50 flex-shrink-0">
+                          {d.storage_provider.backend}
+                        </span>
                       </span>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center py-1 px-2 rounded bg-surface-2">
-                    <span className="text-muted">Live Ingest:</span>
+                  <div className="flex items-center justify-between pt-2 pb-0">
+                    <span className="text-muted font-medium">Live Ingest</span>
                     <span
-                      className={`flex items-center gap-1.5 font-medium ${
+                      className={`inline-flex items-center gap-1.5 font-semibold ${
                         d.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted'
                       }`}
                     >
-                      <Radio size={12} className={d.is_active ? 'animate-pulse' : ''} />
+                      <Radio size={13} className={d.is_active ? 'animate-pulse text-emerald-500' : ''} />
                       {d.is_active ? 'Active & Listening' : 'Paused / Inactive'}
                     </span>
                   </div>
+                </div>
 
-                  {/* Direct live album routing dropdown */}
-                  <div className="pt-1">
-                    <label className="text-[11px] font-medium text-muted block mb-1">
-                      Route Photos To Album:
+                {/* Direct live album routing dropdown */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <FolderOpen size={13} className="text-brand-primary" />
+                      <span>Route Photos To Album</span>
                     </label>
+                    {d.album_id && (
+                      <span className="text-[10px] text-brand-primary font-medium">Live Route Set</span>
+                    )}
+                  </div>
+                  <div className="relative">
                     <select
                       value={d.album_id || ''}
                       disabled={d.lifecycle === 'retired'}
@@ -606,7 +663,7 @@ export function CamerasPage() {
                           setError(err.response?.data?.error || 'Could not assign album');
                         }
                       }}
-                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2 py-1.5 focus:border-brand-primary"
+                      className="w-full text-xs bg-surface text-foreground border border-border rounded-lg pl-3 pr-8 py-2 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary font-medium cursor-pointer transition-all hover:border-brand-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="">Studio Media Library (Default)</option>
                       {albums.map((a) => (
@@ -615,82 +672,112 @@ export function CamerasPage() {
                         </option>
                       ))}
                     </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-muted">
+                      <ChevronDown size={14} />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-3 mt-3 border-t border-border space-y-2">
+              {/* Action buttons footer */}
+              <div className="pt-3.5 border-t border-border/80 space-y-2.5 mt-auto">
                 {d.lifecycle !== 'retired' && (
                   <div className="grid grid-cols-2 gap-2">
                     <Button
                       size="sm"
-                      className="text-xs bg-brand-primary text-white hover:opacity-95 shadow-sm"
+                      className="text-xs bg-brand-primary text-white hover:bg-brand-primary/90 shadow-xs font-semibold h-9 rounded-lg flex items-center justify-center gap-1.5"
                       onClick={() => handleOpenUpload(d)}
                     >
-                      <UploadCloud size={14} className="mr-1.5" />
-                      Upload Photos
+                      <UploadCloud size={14} />
+                      <span>Upload Photos</span>
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs"
+                      className="text-xs font-semibold h-9 rounded-lg flex items-center justify-center gap-1.5 hover:border-brand-primary/50 hover:text-brand-primary"
                       onClick={() => handleOpenViewPhotos(d)}
                     >
-                      <Eye size={14} className="mr-1.5 text-brand-primary" />
-                      View Photos
+                      <Eye size={14} className="text-brand-primary" />
+                      <span>View Photos</span>
                     </Button>
                   </div>
                 )}
 
                 {d.lifecycle !== 'retired' ? (
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs"
-                      onClick={() => setSelected(d)}
-                    >
-                      <KeyRound size={13} className="mr-1" />
-                      Credentials
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs px-2"
-                      onClick={() => handleToggleActive(d)}
-                    >
-                      {d.is_active ? 'Pause' : 'Resume'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-amber-500 hover:text-amber-600 text-xs px-2"
-                      onClick={() => setRetireModalCamera(d)}
-                      title="Retire camera to free quota slot"
-                    >
-                      Retire
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-500 hover:text-red-600 text-xs px-2"
-                      onClick={() => setDeleteModalCamera(d)}
-                      title="Permanently delete camera"
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-8 px-2.5 rounded-lg font-medium flex-1 truncate justify-center hover:border-brand-primary/40"
+                        onClick={() => setSelected(d)}
+                        title="View FTP / Wi-Fi credentials"
+                      >
+                        <KeyRound size={13} className="text-muted mr-1.5 flex-shrink-0" />
+                        <span className="truncate">Credentials</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`text-xs h-8 px-2.5 rounded-lg font-medium flex-1 truncate justify-center transition-colors ${
+                          d.is_active
+                            ? 'text-foreground hover:text-amber-600 hover:border-amber-400/50'
+                            : 'text-emerald-600 border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20'
+                        }`}
+                        onClick={() => handleToggleActive(d)}
+                        title={d.is_active ? 'Pause camera ingest' : 'Resume camera ingest'}
+                      >
+                        {d.is_active ? (
+                          <>
+                            <Pause size={12} className="text-muted mr-1.5 flex-shrink-0" />
+                            <span className="truncate">Pause</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play size={12} className="text-emerald-500 mr-1.5 flex-shrink-0" />
+                            <span className="truncate">Resume</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg font-medium"
+                        onClick={() => setRetireModalCamera(d)}
+                        title="Retire camera to free quota slot"
+                      >
+                        Retire
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg flex items-center justify-center transition-colors"
+                        onClick={() => setDeleteModalCamera(d)}
+                        title="Permanently delete camera"
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between text-[11px] text-muted py-1">
-                    <span>Slot released on {new Date(d.retired_at).toLocaleDateString()}</span>
+                  <div className="flex items-center justify-between text-xs text-muted py-1.5 px-3 bg-surface-2/60 rounded-lg border border-border/60">
+                    <span className="flex items-center gap-1.5">
+                      <Archive size={12} className="text-muted" />
+                      Slot released on {new Date(d.retired_at).toLocaleDateString()}
+                    </span>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-red-500 hover:text-red-600 text-xs px-2"
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 text-xs px-2 h-7 rounded"
                       onClick={() => setDeleteModalCamera(d)}
                       title="Delete record"
                     >
-                      <Trash2 size={13} className="mr-1" /> Delete
+                      <Trash2 size={12} className="mr-1" /> Delete
                     </Button>
                   </div>
                 )}
@@ -750,33 +837,35 @@ export function CamerasPage() {
           </label>
 
           <label>
-            Storage Destination (Optional)
-            <Select
-              value={formDestination}
-              onChange={(e) => setFormDestination(e.target.value)}
-              placeholder="Direct Camera Ingest (No External Server Bound)"
-              searchable={true}
-              options={[
-                {
-                  value: '',
-                  label: '⚡ Direct Camera Ingest (No External Server Bound)',
-                  description: 'Store directly in studio media library',
-                },
-                ...providers
+            Remote Storage Destination
+            {providers.filter((p) => p.is_enabled).length === 0 ? (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between">
+                <span>No remote storage servers connected yet.</span>
+                <Link to="/studio/storage" className="font-semibold underline ml-2">
+                  Connect Storage Server &rarr;
+                </Link>
+              </div>
+            ) : (
+              <Select
+                value={formDestination}
+                onChange={(e) => setFormDestination(e.target.value)}
+                placeholder="Select connected remote storage destination..."
+                searchable={true}
+                options={providers
                   .filter((p) => p.is_enabled)
                   .map((p) => ({
                     value: p.id,
-                    label: p.name,
-                    description: `${p.backend.toUpperCase()} · ${p.provider_type.replace('_', ' ')}`,
+                    label: p.is_default ? `${p.name} (Primary Default)` : p.name,
+                    description: `${p.backend.toUpperCase()} · Remote Server`,
                     badge:
                       p.backend === 's3'
                         ? 'pill-blue'
                         : p.backend === 'sftp'
                         ? 'pill-emerald'
                         : 'pill-amber',
-                  })),
-              ]}
-            />
+                  }))}
+              />
+            )}
           </label>
 
           <label>
@@ -856,6 +945,7 @@ export function CamerasPage() {
         </form>
       </Modal>
 
+      <Modal open={!!repairCamera} onOpenChange={v=>{if(!v){setRepairCamera(null);setRepairPassword('');}}} title="Repair camera SFTP access" description="Set a new password and restore this camera's upload, overwrite and rename permissions."><form className="form-stack" onSubmit={async e=>{e.preventDefault();try{setBusy(true);setRepairError('');const result=await camerasApi.repairGateway(repairCamera.id,repairPassword);setSuccessMsg(result.message);setRepairCamera(null);setRepairPassword('');}catch(e){setRepairError(e.response?.data?.error||'Could not repair gateway');}finally{setBusy(false);}}}>{repairError&&<p className="form-error">{repairError}</p>}<label>New camera password<input required type="password" autoComplete="new-password" minLength={8} maxLength={72} value={repairPassword} onChange={e=>setRepairPassword(e.target.value)}/></label><Button disabled={busy} type="submit">Repair gateway access</Button></form></Modal>
       {/* Connection Details Modal */}
       <Modal
         open={!!selected}
@@ -864,7 +954,7 @@ export function CamerasPage() {
         description="Configure your camera's Wi-Fi FTP/SFTP transmitter settings with these credentials."
       >
         {selected && (
-          <div className="connection-details space-y-2.5">
+          <div className="connection-details space-y-2.5"><Button variant="outline" onClick={()=>{setRepairCamera(selected);setSelected(null);setRepairPassword('');setRepairError('');}}>Repair SFTP access / reset password</Button>
             <div className="flex justify-between items-center py-1.5 border-b border-border">
               <strong className="text-xs">Protocol</strong>
               <span className="font-mono text-xs px-2 py-0.5 rounded bg-surface-2">

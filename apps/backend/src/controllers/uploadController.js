@@ -237,16 +237,6 @@ async function createUploadSession(req, res, next) {
 
     const bytesNum = BigInt(expected_bytes);
 
-    // Hard Quota Check: If platform storage, enforce quota
-    if (storageProvider.provider_type === 'platform') {
-      const quota = await checkStorageQuota(req.studioId, bytesNum);
-      if (!quota.allowed) {
-        return res.status(403).json({
-          error: `Platform storage quota exceeded. Quota: ${quota.quotaGb} GiB, used: ${(Number(quota.committedBytes) / (1024 * 1024 * 1024)).toFixed(2)} GiB.`,
-          code: 'STORAGE_QUOTA_EXCEEDED',
-        });
-      }
-    }
 
     const objectKey = `studios/${req.studioId}/${cameraId}/${Date.now()}_${path.basename(filename)}`;
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1-hour reservation lease
@@ -361,7 +351,7 @@ async function uploadFileStream(req, res, next) {
         data: {
           studio_id: session.studioId,
           source_key: `upload_${session.id}`,
-          meter: provider.provider_type === 'platform' ? 'platform_storage_bytes' : 'studio_owned_upload',
+          meter: 'studio_owned_upload',
           quantity: actualSize.toString(),
         },
       });

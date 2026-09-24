@@ -81,10 +81,10 @@ async function create(req, res, next) {
     let destinationId = storage_provider_id;
     if (destinationId) {
       const dest = await prisma.storage_providers.findFirst({
-        where: { id: destinationId, studio_id: req.studioId, is_enabled: true },
+        where: { id: destinationId, studio_id: req.studioId, is_enabled: true, backend:{in:["sftp","ftp","s3"]} },
       });
       if (!dest) {
-        destinationId = null;
+        return res.status(400).json({error:'Select an enabled external storage connection in this studio'});
       }
     } else {
       const defDest = await prisma.storage_providers.findFirst({
@@ -93,6 +93,8 @@ async function create(req, res, next) {
       });
       if (defDest) destinationId = defDest.id;
     }
+
+    if (!destinationId) return res.status(400).json({error:'Connect external SFTP, FTP or S3 storage before registering a camera'});
 
     // 3. Username uniqueness
     const existingUsername = await prisma.cameras.findUnique({
@@ -130,7 +132,8 @@ async function create(req, res, next) {
         cameraId: camera.id,
       });
     } catch (e) {
-      console.warn('[Camera] Provisioning note:', e.message);
+      await prisma.cameras.delete({where:{id:camera.id}});
+      return res.status(502).json({error:'Camera gateway provisioning failed. Verify SFTPGo admin credentials and writable landing directory, then retry.'});
     }
 
     res.status(201).json(formatCameraDTO(camera));
@@ -305,7 +308,11 @@ async function uploadCameraPhoto(req, res, next) {
     const cameraId = req.params.id;
     const camera = await prisma.cameras.findFirst({
       where: { id: cameraId, studio_id: req.studioId },
-      include: { storage_provider: true },
+      include: {
+        storage_provider: {
+          include: { storage_credentials: true },
+        },
+      },
     });
     if (!camera) return res.status(404).json({ error: 'Camera not found' });
     if (camera.lifecycle === 'retired') {
@@ -352,20 +359,45 @@ async function uploadCameraPhoto(req, res, next) {
         },
       });
 
+      // Link to camera-specific folder
+      let folder = await tx.folders.findFirst({
+        where: { studio_id: req.studioId, name: 'Camera — ' + camera.name, parent_folder_id: null },
+      });
+      if (!folder) {
+        folder = await tx.folders.create({
+          data: { studio_id: req.studioId, name: 'Camera — ' + camera.name },
+        });
+      }
+      await tx.folder_items.create({
+        data: { folder_id: folder.id, item_type: 'asset', item_id: newAsset.id },
+      });
+
+      // Link to assigned album if configured
       if (camera.album_id) {
-        await tx.album_assets.upsert({
-          where: {
-            album_id_asset_id: {
-              album_id: camera.album_id,
+        const album = await tx.albums.findFirst({
+          where: { id: camera.album_id, studio_id: req.studioId },
+        });
+        if (album) {
+          await tx.album_assets.upsert({
+            where: {
+              album_id_asset_id: {
+                album_id: album.id,
+                asset_id: newAsset.id,
+              },
+            },
+            create: {
+              album_id: album.id,
               asset_id: newAsset.id,
             },
-          },
-          create: {
-            album_id: camera.album_id,
-            asset_id: newAsset.id,
-          },
-          update: {},
-        });
+            update: {},
+          });
+          if (!album.cover_asset_id) {
+            await tx.albums.update({
+              where: { id: album.id },
+              data: { cover_asset_id: newAsset.id },
+            });
+          }
+        }
       }
 
       await tx.cameras.update({
@@ -402,7 +434,18 @@ async function uploadCameraPhoto(req, res, next) {
   }
 }
 
+async function repairGateway(req,res,next){try{
+ const password=req.body.password;
+ if(typeof password!=='string'||password.length<8||password.length>72)return res.status(400).json({error:'Use a password of 8–72 characters'});
+ const camera=await prisma.cameras.findFirst({where:{id:req.params.id,studio_id:req.studioId,lifecycle:{not:'retired'}}});
+ if(!camera)return res.status(404).json({error:'Camera not found'});
+ const studio=await prisma.studios.findUnique({where:{id:req.studioId},select:{slug:true}});
+ try{await sftpgoService.repairCameraUser({username:camera.sftpgo_username,password,studioSlug:studio.slug,cameraId:camera.id,active:camera.is_active});}catch(e){return res.status(502).json({error:'Gateway repair failed. Verify gateway admin access and directory permissions.'});}
+ await prisma.cameras.update({where:{id:camera.id},data:{sftpgo_password_hash:await bcrypt.hash(password,12)}});
+ res.json({message:'Camera SFTP credentials and upload permissions updated. Set the new password on your camera.'});
+}catch(e){next(e);}}
 module.exports = {
+ repairGateway,
   assignAlbum,
   list,
   create,

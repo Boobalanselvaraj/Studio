@@ -1,3 +1,7 @@
+import api from '../../api/client';
+import {ShareQr} from '../../components/gallery/ShareQr';
+import {Button} from '../../components/ui/button';
+import {toast} from '../../components/ui/toast';
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, Sparkles, Radio, CheckCircle2 } from 'lucide-react';
@@ -8,6 +12,8 @@ import { customerPortalApi } from '../../api/services';
 
 export function GalleryViewPage() {
   const { albumId } = useParams();
+  const [shareUrl,setShareUrl]=useState('');
+  const [shareBusy,setShareBusy]=useState(false);
   const [collection, setCollection] = useState(null);
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +43,7 @@ export function GalleryViewPage() {
         if (Array.isArray(found.assets) && found.assets.length > 0) {
           setAssets(
             found.assets.map((a) => ({
+              ...a,
               id: a.id,
               filename: a.filename,
               thumbnailUrl: a.thumbnailUrl || `/api/customer/assets/${a.id}/view`,
@@ -65,6 +72,7 @@ export function GalleryViewPage() {
 
   // Initial load
   useEffect(() => {
+    setShareUrl('');setAssets([]);setCollection(null);
     fetchCollectionData(false);
   }, [albumId]);
 
@@ -125,7 +133,7 @@ export function GalleryViewPage() {
     // High-frequency 3s background polling fallback for tethering reliability
     const pollInterval = setInterval(() => {
       fetchCollectionData(true);
-    }, 3000);
+    }, 30000);
 
     return () => {
       if (eventSource) eventSource.close();
@@ -206,7 +214,8 @@ export function GalleryViewPage() {
         <p>{subtitle}</p>
       </div>
 
-      <CustomerGallery
+      {collection.can_share && <div className="panel p-5 mb-6"><Button disabled={shareBusy} onClick={async()=>{try{setShareBusy(true);const {data}=await api.post('/customer/albums/'+albumId+'/share');setShareUrl(data.share_url);}catch(e){toast.error(e.response?.data?.error||'Could not share album');}finally{setShareBusy(false);}}}>Create guest link & QR</Button>{shareUrl&&<><a className="block break-all mt-3" href={shareUrl}>{shareUrl}</a><ShareQr url={shareUrl} title={collection.title}/></>}</div>}
+      <CustomerGallery canDownload={collection.can_download} canFavorite={collection.can_favorite}
         key={albumId}
         galleryId={albumId}
         assets={displayAssets}

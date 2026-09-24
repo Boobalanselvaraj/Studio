@@ -16,7 +16,7 @@ async function handleBillingMeteringMessage(payload) {
   const providers = await prisma.storage_providers.findMany({
     where: {
       studio_id: payload.studioId,
-      provider_type: 'platform',
+      provider_type: 'studio_owned',
     },
     select: { id: true },
   });
@@ -68,7 +68,7 @@ async function startBillingMeteringWorker() {
     if (msg !== null) {
       try {
         const payload = JSON.parse(msg.content.toString());
-        console.log('[Billing Metering Worker] Processing daily snapshot / quota check:', payload);
+        console.log('[Billing Metering Worker] Processing external storage usage snapshot:', payload);
 
         await handleBillingMeteringMessage(payload);
         

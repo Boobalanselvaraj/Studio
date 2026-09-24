@@ -78,6 +78,7 @@ async function getTree(req, res, next) {
       const assets = await prisma.assets.findMany({
         where: {
           id: { in: allAssetItemIds },
+          is_soft_deleted: false,
           studio_id: req.studioId,
         },
         select: {
@@ -135,6 +136,7 @@ async function serveAsset(req, res, next) {
     const asset = await prisma.assets.findFirst({
       where: {
         id: assetId,
+        is_soft_deleted: false,
         studio_id: req.studioId,
       },
     });
@@ -368,7 +370,11 @@ async function publishGallery(req, res, next) {
       });
     }
 
-    // Link folder assets
+    const descendantIds=await getDescendantFolderIds(folder.id,req.studioId);
+    const nestedItems=await prisma.folder_items.findMany({where:{folder_id:{in:[folder.id,...descendantIds]},item_type:'asset'}});
+    const validAssets=await prisma.assets.findMany({where:{id:{in:nestedItems.map(item=>item.item_id)},studio_id:req.studioId,is_soft_deleted:false},select:{id:true}});
+    folder.folder_items=validAssets.map(asset=>({item_id:asset.id}));
+    // Link folder and descendant assets
     for (let i = 0; i < folder.folder_items.length; i++) {
       const item = folder.folder_items[i];
       await prisma.album_assets.upsert({
@@ -496,6 +502,12 @@ async function batchAssignAssets(req, res, next) {
       return res.status(400).json({ error: 'asset_ids array is required' });
     }
 
+    const uniqueIds = [...new Set(asset_ids)];
+    const validAssets = await prisma.assets.count({where:{id:{in:uniqueIds},studio_id:req.studioId,is_soft_deleted:false}});
+    if(validAssets !== uniqueIds.length) return res.status(400).json({error:'One or more files do not belong to this studio'});
+    if(album_id && !await prisma.albums.findFirst({where:{id:album_id,studio_id:req.studioId}})) return res.status(404).json({error:'Album not found'});
+    if(customer_id && !await prisma.customers.findFirst({where:{id:customer_id,studio_id:req.studioId}})) return res.status(404).json({error:'Customer not found'});
+    if(!album_id && !new_album_title?.trim()) return res.status(400).json({error:'Choose an album or enter a new album title'});
     let targetAlbumId = album_id;
     if (!targetAlbumId && new_album_title && new_album_title.trim()) {
       const newAlbum = await prisma.albums.create({
@@ -551,7 +563,30 @@ async function batchAssignAssets(req, res, next) {
   }
 }
 
+async function updateAsset(req,res,next){try{
+ const {filename}=req.body;
+ if(typeof filename!=='string'||!filename.trim()||filename.length>255||/[\\/\x00-\x1f]/.test(filename))return res.status(400).json({error:'Enter a valid filename without path separators'});
+ const asset=await prisma.assets.findFirst({where:{id:req.params.id,studio_id:req.studioId,is_soft_deleted:false}});
+ if(!asset)return res.status(404).json({error:'File not found'});
+ if(path.extname(filename).toLowerCase()!==path.extname(asset.filename).toLowerCase())return res.status(400).json({error:'Keep the original file extension when renaming'});
+ const updated=await prisma.assets.update({where:{id:asset.id},data:{filename:filename.trim()}});res.json(updated);
+}catch(e){next(e);}}
+async function deleteAsset(req,res,next){try{
+ const result=await prisma.assets.updateMany({where:{id:req.params.id,studio_id:req.studioId,is_soft_deleted:false},data:{is_soft_deleted:true,deleted_at:new Date()}});
+ if(!result.count)return res.status(404).json({error:'File not found'});
+ res.json({message:'File removed from library and galleries. Original retained in external storage.'});
+}catch(e){next(e);}}
+async function addFolderAssets(req,res,next){try{
+ const folder=await prisma.folders.findFirst({where:{id:req.params.id,studio_id:req.studioId}});
+ if(!folder)return res.status(404).json({error:'Folder not found'});
+ if(!Array.isArray(req.body.asset_ids)||!req.body.asset_ids.length)return res.status(400).json({error:'Select files to add'});
+ const ids=[...new Set(req.body.asset_ids)];
+ const count=await prisma.assets.count({where:{id:{in:ids},studio_id:req.studioId,is_soft_deleted:false}});
+ if(count!==ids.length)return res.status(400).json({error:'Some files are not available in this studio'});
+ await prisma.folder_items.createMany({data:ids.map(id=>({folder_id:folder.id,item_type:'asset',item_id:id})),skipDuplicates:true});res.json({message:'Files added to collection'});
+}catch(e){next(e);}}
 module.exports = {
+ updateAsset,deleteAsset,addFolderAssets,
   getTree,
   getServerExplorerData,
   batchAssignAssets,

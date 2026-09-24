@@ -1,3 +1,5 @@
+import { MediaBrowser, MediaViewer } from '../../../components/gallery/MediaBrowser';
+import { ShareQr } from '../../../components/gallery/ShareQr';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   FolderOpen,
@@ -51,6 +53,10 @@ export function FoldersPage() {
   const [activeTab, setActiveTab] = useState('tree');
 
   // Folders view state
+  const [renameAsset,setRenameAsset]=useState(null);
+  const [removeAsset,setRemoveAsset]=useState(null);
+  const [renameFolder,setRenameFolder]=useState(null);
+  const [targetFolder,setTargetFolder]=useState('');
   const [tree, setTree] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -803,242 +809,8 @@ export function FoldersPage() {
             )}
 
             {/* Files Main View */}
-            {filteredAssets.length === 0 ? (
-              <div className="panel p-12 text-center space-y-3">
-                <FileImage size={40} className="text-muted mx-auto opacity-50" />
-                <h4 className="text-base font-bold text-foreground">No media files found</h4>
-                <p className="text-xs text-muted max-w-md mx-auto">
-                  No photos match your filter. Connect your camera via Wi-Fi tethering (Port 2022) or select another server node in the tree.
-                </p>
-                <Button variant="outline" size="sm" onClick={handleSyncStorage} disabled={syncing}>
-                  <RefreshCw size={14} className={syncing ? 'animate-spin mr-1.5' : 'mr-1.5'} />
-                  Scan Physical Storage
-                </Button>
-              </div>
-            ) : viewMode === 'grid' ? (
-              /* GRID VIEW */
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {filteredAssets.map((asset) => {
-                  const isSelected = selectedAssetIds.includes(asset.id);
-                  const ext = asset.filename.split('.').pop()?.toUpperCase() || 'IMG';
+            <MediaBrowser assets={filteredAssets} selectedIds={selectedAssetIds} onSelect={toggleSelectAsset} onRename={setRenameAsset} onRemove={setRemoveAsset}/>
 
-                  return (
-                    <div
-                      key={asset.id}
-                      className={`group relative rounded-xl overflow-hidden border transition-all duration-200 cursor-pointer bg-surface-2 ${
-                        isSelected
-                          ? 'border-brand-primary ring-2 ring-brand-primary/30 shadow-md'
-                          : 'border-border hover:border-brand-primary/50 shadow-sm'
-                      }`}
-                      onClick={() => toggleSelectAsset(asset.id)}
-                    >
-                      {/* Checkbox badge */}
-                      <div
-                        className="absolute top-2 left-2 z-10 p-1 rounded-md bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSelectAsset(asset.id);
-                        }}
-                      >
-                        {isSelected ? (
-                          <CheckSquare size={16} className="text-brand-primary" />
-                        ) : (
-                          <Square size={16} className="text-white/80" />
-                        )}
-                      </div>
-
-                      {/* Format tag */}
-                      <span className="absolute top-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-sm">
-                        {ext}
-                      </span>
-
-                      {/* Thumbnail Image */}
-                      <div className="aspect-[4/3] w-full overflow-hidden bg-black/5 relative">
-                        <img
-                          src={asset.url}
-                          alt={asset.filename}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
-                        {/* Hover overlay preview */}
-                        <div
-                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLightboxAsset(asset);
-                          }}
-                        >
-                          <span className="p-2 rounded-full bg-white/20 backdrop-blur-md text-white hover:bg-white/40">
-                            <Eye size={18} />
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Info footer */}
-                      <div className="p-2.5 space-y-1">
-                        <p className="text-xs font-semibold text-foreground truncate" title={asset.filename}>
-                          {asset.filename}
-                        </p>
-
-                        <div className="flex items-center justify-between text-[11px] text-muted">
-                          <span>{formatFileSize(asset.file_size_bytes)}</span>
-                          <span>
-                            {new Date(asset.created_at).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-
-                        {/* Device & Server Pills */}
-                        <div className="flex items-center gap-1 pt-1 flex-wrap">
-                          {asset.camera ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-medium truncate max-w-[120px]">
-                              <Camera size={10} /> {asset.camera.name}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-surface-muted text-muted font-medium">
-                              Direct Ingest
-                            </span>
-                          )}
-
-                          {asset.storage_provider && (
-                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 font-medium truncate max-w-[100px]">
-                              <Server size={10} /> {asset.storage_provider.name}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Assigned albums */}
-                        {asset.albums && asset.albums.length > 0 && (
-                          <div className="text-[10px] text-amber-600 font-medium truncate pt-0.5">
-                            📁 {asset.albums.map((a) => a.title).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* LIST / TABLE VIEW */
-              <div className="panel overflow-hidden border border-border">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-surface-muted text-muted font-semibold uppercase tracking-wider border-b border-border">
-                      <tr>
-                        <th className="p-3 w-10">
-                          <input
-                            type="checkbox"
-                            checked={
-                              selectedAssetIds.length === filteredAssets.length &&
-                              filteredAssets.length > 0
-                            }
-                            onChange={handleSelectAllFiltered}
-                            className="rounded"
-                          />
-                        </th>
-                        <th className="p-3">Media File</th>
-                        <th className="p-3">Camera Source</th>
-                        <th className="p-3">Storage Server</th>
-                        <th className="p-3">Size</th>
-                        <th className="p-3">Captured</th>
-                        <th className="p-3">Assigned Shoot</th>
-                        <th className="p-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filteredAssets.map((asset) => {
-                        const isSelected = selectedAssetIds.includes(asset.id);
-                        return (
-                          <tr
-                            key={asset.id}
-                            className={`hover:bg-surface-2 transition-colors ${
-                              isSelected ? 'bg-brand-primary/5' : ''
-                            }`}
-                          >
-                            <td className="p-3">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelectAsset(asset.id)}
-                                className="rounded"
-                              />
-                            </td>
-                            <td className="p-3">
-                              <div className="flex items-center gap-2.5">
-                                <img
-                                  src={asset.url}
-                                  alt={asset.filename}
-                                  className="w-9 h-9 object-cover rounded-lg border border-border flex-shrink-0 cursor-pointer"
-                                  onClick={() => setLightboxAsset(asset)}
-                                />
-                                <div className="truncate max-w-[200px]">
-                                  <div
-                                    className="font-medium text-foreground truncate cursor-pointer hover:text-brand-primary"
-                                    onClick={() => setLightboxAsset(asset)}
-                                  >
-                                    {asset.filename}
-                                  </div>
-                                  <div className="text-[10px] text-muted">{asset.mime_type}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              {asset.camera ? (
-                                <span className="inline-flex items-center gap-1 font-medium text-emerald-600">
-                                  <Camera size={12} /> {asset.camera.name}
-                                </span>
-                              ) : (
-                                <span className="text-muted">Direct Upload</span>
-                              )}
-                            </td>
-                            <td className="p-3">
-                              {asset.storage_provider ? (
-                                <span className="inline-flex items-center gap-1 font-medium text-indigo-600">
-                                  <Server size={12} /> {asset.storage_provider.name}
-                                </span>
-                              ) : (
-                                <span className="text-muted">Direct Ingest</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-muted">{formatFileSize(asset.file_size_bytes)}</td>
-                            <td className="p-3 text-muted">
-                              {new Date(asset.created_at).toLocaleDateString()}{' '}
-                              {new Date(asset.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </td>
-                            <td className="p-3">
-                              {asset.albums && asset.albums.length > 0 ? (
-                                <span className="font-semibold text-amber-600 truncate block max-w-[150px]">
-                                  📁 {asset.albums.map((a) => a.title).join(', ')}
-                                </span>
-                              ) : (
-                                <span className="text-muted italic">Unassigned</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-right">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedAssetIds([asset.id]);
-                                  setAssignModalOpen(true);
-                                }}
-                              >
-                                Assign
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -1434,61 +1206,9 @@ export function FoldersPage() {
                     </div>
                   </div>
 
-                  {selectedFolder.assets && selectedFolder.assets.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                      {selectedFolder.assets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="group relative rounded-xl overflow-hidden border border-border bg-surface-muted hover:border-brand-primary/50 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
-                          onClick={() => setLightboxAsset(asset)}
-                        >
-                          <div className="aspect-[4/3] w-full overflow-hidden bg-black/5 relative">
-                            <img
-                              src={asset.url}
-                              alt={asset.filename}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              loading="lazy"
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                              <span className="p-2 rounded-full bg-white/20 backdrop-blur-md text-white">
-                                <Eye size={18} />
-                              </span>
-                            </div>
-                            <span className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-sm">
-                              {asset.filename.split('.').pop()?.toUpperCase()}
-                            </span>
-                          </div>
+                  <Button variant="outline" onClick={()=>setRenameFolder({...selectedFolder})}>Rename collection</Button>
+                  <MediaBrowser assets={selectedFolder.assets || []} onRename={setRenameAsset} onRemove={setRemoveAsset}/>
 
-                          <div className="p-2.5">
-                            <p className="text-xs font-semibold text-foreground truncate" title={asset.filename}>
-                              {asset.filename}
-                            </p>
-                            <div className="flex justify-between items-center text-[11px] text-muted mt-1">
-                              <span>{formatFileSize(asset.file_size_bytes)}</span>
-                              <span>
-                                {new Date(asset.created_at).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty-state py-12 border border-dashed border-border rounded-xl">
-                      <FileImage size={36} className="text-muted mb-2 opacity-50" />
-                      <h3 className="font-semibold text-base mb-1">No photos in this folder yet</h3>
-                      <p className="text-xs text-muted max-w-md mx-auto mb-4">
-                        Take a shot on your camera or save images to <code>storage/studios/{selectedFolder.name}</code> to sync them instantly.
-                      </p>
-                      <Button variant="outline" size="sm" onClick={handleSyncStorage} disabled={syncing}>
-                        <RefreshCw size={14} className={syncing ? 'animate-spin mr-1.5' : 'mr-1.5'} />
-                        Check for New Photos
-                      </Button>
-                    </div>
-                  )}
                 </section>
               )}
             </div>
@@ -1518,6 +1238,7 @@ export function FoldersPage() {
                 <strong className="text-foreground">{selectedAssetIds.length} file(s)</strong>
               </div>
 
+              <label>Folder collection<select value={targetFolder} onChange={e=>setTargetFolder(e.target.value)}><option value="">Choose folder</option>{allFolders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label><Button type="button" disabled={!targetFolder||assignBusy} onClick={async()=>{try{setAssignBusy(true);await foldersApi.addFolderAssets(targetFolder,selectedAssetIds);toast.success('Added to folder collection');setAssignModalOpen(false);setSelectedAssetIds([]);await loadTree();}catch(e){toast.error(e.response?.data?.error||'Could not add files');}finally{setAssignBusy(false);}}}>Add selected files to collection</Button>
               {/* Album Selection or Creation */}
               <label className="text-xs font-semibold text-foreground">
                 Shoot Album / Collection
@@ -1592,47 +1313,10 @@ export function FoldersPage() {
       {/* ========================================================================= */}
       {/* MODAL: LIGHTBOX PHOTO PREVIEW                                             */}
       {/* ========================================================================= */}
-      {lightboxAsset && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4"
-          onClick={() => setLightboxAsset(null)}
-        >
-          <div className="absolute top-4 right-4 flex items-center gap-3 z-10" onClick={(e) => e.stopPropagation()}>
-            <a
-              href={lightboxAsset.url}
-              download={lightboxAsset.filename}
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-              title="Download original image"
-            >
-              <Download size={18} />
-            </a>
-            <button
-              onClick={() => setLightboxAsset(null)}
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <div
-            className="max-w-5xl max-h-[85vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={lightboxAsset.url}
-              alt={lightboxAsset.filename}
-              className="max-h-[75vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
-            />
-            <div className="mt-4 text-center text-white space-y-1">
-              <h3 className="font-semibold text-base">{lightboxAsset.filename}</h3>
-              <p className="text-xs text-white/70">
-                {formatFileSize(lightboxAsset.file_size_bytes)} · {lightboxAsset.mime_type} · Camera:{' '}
-                {lightboxAsset.camera?.name || 'Wi-Fi SFTP'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal open={!!renameAsset} onOpenChange={open=>!open&&setRenameAsset(null)} title="Rename file" description="Update the display name in your library."><form className="form-stack" onSubmit={async e=>{e.preventDefault();try{await foldersApi.updateAsset(renameAsset.id,{filename:renameAsset.filename});setRenameAsset(null);await Promise.all([loadTree(),loadExplorerData()]);}catch(e){toast.error(e.response?.data?.error||'Could not rename file');}}}><label>Filename<input required maxLength={255} value={renameAsset?.filename||''} onChange={e=>setRenameAsset({...renameAsset,filename:e.target.value})}/></label><Button type="submit">Save name</Button></form></Modal>
+      <Modal open={!!renameFolder} onOpenChange={open=>!open&&setRenameFolder(null)} title="Rename collection" description="Give this collection a clear name."><form className="form-stack" onSubmit={async e=>{e.preventDefault();try{await foldersApi.update(renameFolder.id,{name:renameFolder.name});setRenameFolder(null);await loadTree();}catch(e){toast.error(e.response?.data?.error||'Could not rename collection');}}}><label>Name<input required value={renameFolder?.name||''} onChange={e=>setRenameFolder({...renameFolder,name:e.target.value})}/></label><Button type="submit">Save name</Button></form></Modal>
+      <ConfirmModal open={!!removeAsset} onOpenChange={open=>!open&&setRemoveAsset(null)} title="Remove file from library?" description="This hides the file from all galleries. The original remains in external storage." confirmText="Remove file" variant="danger" onConfirm={async()=>{try{await foldersApi.deleteAsset(removeAsset);setRemoveAsset(null);await Promise.all([loadTree(),loadExplorerData()]);}catch(e){toast.error(e.response?.data?.error||'Could not remove file');}}}/>
+      <MediaViewer selected={lightboxAsset} assets={selectedFolder?.assets || explorerData.assets} onClose={()=>setLightboxAsset(null)}/>
 
       {/* ========================================================================= */}
       {/* MODAL: CREATE FOLDER                                                      */}
@@ -1764,6 +1448,7 @@ export function FoldersPage() {
                 </Button>
               </div>
 
+              <ShareQr url={generatedShareUrl} title={selectedFolder?.name}/>
               <p className="text-xs text-muted">
                 Guests can view high-resolution photos and receive live real-time updates. Original file downloads and account access are blocked.
               </p>

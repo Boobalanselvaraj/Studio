@@ -3,6 +3,7 @@ const router = express.Router();
 const cameraController = require('../controllers/cameraController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
+router.post('/:id/repair-gateway', requireStudioRole(['studio_owner']), cameraController.repairGateway);
 router.get('/', cameraController.list);
 router.post('/', requireStudioRole(['studio_owner']), cameraController.create);
 router.patch('/:id/status', requireStudioRole(['studio_owner']), cameraController.toggleActive);

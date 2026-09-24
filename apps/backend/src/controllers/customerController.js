@@ -79,6 +79,7 @@ async function listStudioCustomers(req, res, next) {
         is_published: ac.album.is_published,
         can_download: ac.can_download,
         can_favorite: ac.can_favorite,
+        can_share: ac.can_share,
         assets_count: ac.album._count?.album_assets || 0,
       }));
       const totalPhotos = albums.reduce((acc, a) => acc + (a.assets_count || 0), 0);
@@ -133,7 +134,7 @@ async function updateCustomer(req, res, next) {
         ...(address !== undefined ? { address } : {}),
         ...(notes !== undefined ? { notes } : {}),
       },
-      include: { user: true },
+      include: { user: { select: { id: true, email: true, full_name: true, phone: true } } },
     });
     res.json(updated);
   } catch (err) {
@@ -174,7 +175,8 @@ async function unshareAlbum(req, res, next) {
 
 async function createCustomer(req, res, next) {
   try {
-    const { full_name, email, phone, address, notes } = req.body;
+    const { full_name, email, phone, address, notes, password } = req.body;
+    if (password !== undefined && (typeof password !== 'string' || password.length < 8 || password.length > 72)) return res.status(400).json({error:'Password must contain 8–72 characters'});
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
     if (!normalizedEmail || !full_name) {
@@ -192,7 +194,7 @@ async function createCustomer(req, res, next) {
 
     if (!user) {
       const salt = await bcrypt.genSalt(10);
-      temporaryPassword=require('crypto').randomBytes(18).toString('base64url');
+      temporaryPassword=password || require('crypto').randomBytes(18).toString('base64url');
       const password_hash = await bcrypt.hash(temporaryPassword, salt);
       user = await prisma.users.create({
         data: {
@@ -310,6 +312,7 @@ async function getMyGalleries(req, res, next) {
       })),
       can_download: ac.can_download,
       can_favorite: ac.can_favorite,
+        can_share: ac.can_share,
       studio_name: ac.album?.studio?.name || 'StudioFlow',
       brand_name: ac.album?.studio?.studio_branding?.brand_name || ac.album?.studio?.name,
       logo_url: ac.album?.studio?.studio_branding?.logo_url,
@@ -370,6 +373,7 @@ async function getAlbumById(req, res, next) {
         created_at: aa.asset.created_at,
       }));
 
+    const grant = await prisma.album_customers.findFirst({where:{album_id:album.id,customer:{user_id:req.user.id}}});
     const firstAsset = assets[0];
     const coverUrl = firstAsset ? firstAsset.thumbnailUrl : null;
 
@@ -383,6 +387,9 @@ async function getAlbumById(req, res, next) {
       brand_name: album.studio?.studio_branding?.brand_name || album.studio?.name,
       logo_url: album.studio?.studio_branding?.logo_url,
       primary_color: album.studio?.studio_branding?.primary_color || '#3B82F6',
+      can_download: !!grant?.can_download,
+      can_favorite: !!grant?.can_favorite,
+      can_share: !!grant?.can_share,
       photo_count: assets.length,
       cover: coverUrl,
       assets: assets,
@@ -411,7 +418,7 @@ async function serveCustomerAsset(req, res, next) {
 
 async function shareAlbum(req, res, next) {
   try {
-    const { album_id, customer_id, can_download = true, can_favorite = true } = req.body;
+    const { album_id, customer_id, can_download = true, can_favorite = true, can_share = false } = req.body;
 
     if (!album_id || !customer_id) {
       return res.status(400).json({ error: 'album_id and customer_id are required' });
@@ -454,10 +461,12 @@ async function shareAlbum(req, res, next) {
         customer_id,
         can_download,
         can_favorite,
+        can_share,
       },
       update: {
         can_download,
         can_favorite,
+        can_share,
       },
     });
 

@@ -83,7 +83,6 @@ export function AdminLayout() {
         <nav aria-label="Administration">
           {[
             ['Studios & Tenants', '/admin/studios', Building2],
-            ['Storage Servers', '/admin/storage-servers', HardDrive],
             ['Support & Requests', '/admin/support', LifeBuoy],
             ['Billing & Invoices', '/admin/billing-plans', Receipt],
           ].map(([name, path, Icon]) => (

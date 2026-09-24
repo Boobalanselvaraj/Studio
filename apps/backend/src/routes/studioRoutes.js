@@ -38,8 +38,7 @@ router.post('/customers/albums/unshare', requireStudioRole(['studio_owner', 'stu
 
 // Direct Platform Allocations & Storage Usage
 router.get('/allocations', billingController.getProfile);
-router.get('/allocation-requests', billingController.getAllocationRequests);
-router.post('/allocation-requests', billingController.requestUpgrade);
+router.all('/allocation-requests*', (req,res)=>res.status(410).json({error:'Allocation requests have been replaced by support tickets. Use /support-tickets.'}));
 router.get('/storage-usage', billingController.getUsage);
 
 // Direct Album Public Shares
@@ -63,4 +62,8 @@ router.use('/billing', billingRoutes);
 router.use('/shares', shareRoutes);
 router.use('/upload-profiles', uploadRoutes);
 
+const support = require('../controllers/supportController');
+router.get('/support-tickets', support.list);
+router.post('/support-tickets', support.create);
+router.patch('/support-tickets/:id', support.update);
 module.exports = router;

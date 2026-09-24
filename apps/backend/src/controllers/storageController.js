@@ -1,9 +1,14 @@
 const prisma = require('../config/prisma');
-const { encryptStorageCredentials } = require('../config/storage');
+const { encryptStorageCredentials, decryptStorageCredentials } = require('../config/storage');
 const { testConnection: probeStorage } = require('../services/storageAdapters');
 
 const VALID_STUDIO_BACKENDS = new Set(['s3', 'sftp', 'ftp']);
 
+function validateCredentials(backend,c) {
+ const required=backend==='s3'?['bucket','region','accessKeyId','secretAccessKey']:['host','username'];
+ if(!c || typeof c!=='object' || required.some(k=>typeof c[k]!=='string'||!c[k].trim()) || (backend!=='s3'&&!c.password&&!c.privateKey)) {const e=new Error('Complete the required credentials for '+backend.toUpperCase());e.statusCode=400;e.isPublic=true;throw e;}
+ if(backend!=='s3' && (!Number.isInteger(Number(c.port))||Number(c.port)<1||Number(c.port)>65535)){const e=new Error('Port must be between 1 and 65535');e.statusCode=400;e.isPublic=true;throw e;}
+}
 function formatProviderDTO(p) {
   return {
     id: p.id,
@@ -17,6 +22,13 @@ function formatProviderDTO(p) {
     tested_at: p.tested_at,
     version: p.version,
     has_credentials: Boolean(p.storage_credentials && (!Array.isArray(p.storage_credentials) || p.storage_credentials.length > 0)),
+    connection: (() => {
+      const record=Array.isArray(p.storage_credentials)?p.storage_credentials[0]:p.storage_credentials;
+      if(!record?.encrypted_config)return {};
+      const config=decryptStorageCredentials(record.encrypted_config);
+      const safe={};for(const key of ['host','port','username','root','bucket','region','endpoint','secure','forcePathStyle'])if(config[key]!==undefined)safe[key]=config[key];
+      return safe;
+    })(),
     created_at: p.created_at,
   };
 }
@@ -27,7 +39,7 @@ async function list(req, res, next) {
       where: { studio_id: req.studioId },
       include: {
         storage_credentials: {
-          select: { id: true, created_at: true },
+          select: { id: true, created_at: true, encrypted_config: true },
         },
       },
       orderBy: [{ is_default: 'desc' }, { created_at: 'desc' }],
@@ -63,6 +75,7 @@ async function create(req, res, next) {
       return res.status(400).json({ error: `Credentials are required for ${backend.toUpperCase()} storage connection.` });
     }
 
+    validateCredentials(backend,credentials);
     const provider = await prisma.$transaction(async (tx) => {
       if (is_default) {
         await tx.storage_providers.updateMany({
@@ -152,15 +165,13 @@ async function update(req, res, next) {
 
     const existing = await prisma.storage_providers.findFirst({
       where: { id: providerId, studio_id: req.studioId },
+      include: {storage_credentials:true},
     });
 
     if (!existing) {
       return res.status(404).json({ error: 'Storage connection not found' });
     }
 
-    if (existing.provider_type === 'platform' && req.user?.is_super_admin !== true) {
-      return res.status(403).json({ error: 'Platform storage configuration cannot be modified by studio owners' });
-    }
 
     const updated = await prisma.$transaction(async (tx) => {
       if (is_default) {
@@ -177,11 +188,17 @@ async function update(req, res, next) {
           is_default: is_default !== undefined ? !!is_default : undefined,
           is_enabled: is_enabled !== undefined ? !!is_enabled : undefined,
           version: { increment: 1 },
+          ...(credentials ? {health:"untested",tested_at:null} : {}),
         },
       });
 
       if (credentials && typeof credentials === 'object' && Object.keys(credentials).length > 0) {
-        const encrypted = encryptStorageCredentials(credentials);
+        const record=Array.isArray(existing.storage_credentials)?existing.storage_credentials[0]:existing.storage_credentials;
+        const previous=record?.encrypted_config?decryptStorageCredentials(record.encrypted_config):{};
+        const merged={...previous,...credentials};
+        for(const key of ['password','secretAccessKey','accessKeyId','privateKey','passphrase'])if(!credentials[key]&&previous[key])merged[key]=previous[key];
+        validateCredentials(existing.backend,merged);
+        const encrypted = encryptStorageCredentials(merged);
         const existingCred = await tx.storage_credentials.findFirst({
           where: { storage_provider_id: providerId },
         });
@@ -221,9 +238,6 @@ async function remove(req, res, next) {
       return res.status(404).json({ error: 'Storage connection not found' });
     }
 
-    if (provider.provider_type === 'platform') {
-      return res.status(403).json({ error: 'Platform storage cannot be deleted by studio' });
-    }
 
     // Check if cameras or assets are attached
     const attachedCameras = await prisma.cameras.count({

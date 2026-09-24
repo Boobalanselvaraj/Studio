@@ -55,7 +55,7 @@ services:
       SFTPGO_DEFAULT_ADMIN_PASSWORD: ${SFTPGO_ADMIN_PASSWORD:-password123}
     volumes:
       - sftpgo_data:/var/lib/sftpgo
-      - ../storage/studios:/srv/sftpgo/data
+      - sftpgo_ingest_data:/srv/sftpgo/data
     networks:
       - studio_network
 
@@ -63,6 +63,7 @@ volumes:
   redis_data:
   rabbitmq_data:
   sftpgo_data:
+  sftpgo_ingest_data:
 
 networks:
   studio_network:

@@ -40,7 +40,8 @@ const nav = [
 const settings = [
   ['Storage', '/studio/storage', HardDrive],
   ['Branding', '/studio/branding', Palette],
-  ['Billing & usage', '/studio/billing', CreditCard],
+  ['Support tickets', '/studio/support', CreditCard],
+    ['Billing & usage', '/studio/billing', CreditCard],
 ];
 
 export function StudioLayout() {

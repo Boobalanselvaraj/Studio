@@ -38,9 +38,13 @@ const blankForm = {
   accessKeyId: '',
   secretAccessKey: '',
   endpoint: '',
+  privateKey: '',
+  passphrase: '',
+  secure: false,
 };
 
 export function StorageSettingsPage() {
+  const [editing, setEditing] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(blankForm);
   const [open, setOpen] = useState(false);
@@ -80,13 +84,7 @@ export function StorageSettingsPage() {
           success: true,
           message: res?.message || 'Storage connection test passed! Full read/write access verified.',
           tested_at: new Date().toISOString(),
-          checks: {
-            connect: true,
-            auth: true,
-            list: true,
-            write: true,
-            delete: true,
-          },
+          checks: res.capabilities || {},
         },
       }));
       setMessage(`Connection test passed for "${items.find((p) => p.id === providerId)?.name}".`);
@@ -136,22 +134,25 @@ export function StorageSettingsPage() {
               bucket: form.bucket.trim(),
               region: form.region.trim(),
               accessKeyId: form.accessKeyId.trim(),
-              secretAccessKey: form.secretAccessKey.trim(),
+              secretAccessKey: form.secretAccessKey,
               ...(form.endpoint.trim() ? { endpoint: form.endpoint.trim() } : {}),
             }
           : {
               host: form.host.trim(),
-              port: Number(form.port) || 22,
+              port: Number(form.port) || (form.backend==='ftp'?21:22),
               username: form.username.trim(),
               password: form.password,
               root: form.root.trim() || '/',
+              ...(form.backend==='sftp'?{privateKey:form.privateKey,passphrase:form.passphrase}:{secure:form.secure}),
             };
 
-      await storageApi.createProvider({
+      const payload = {
         name: form.name.trim(),
         backend: form.backend,
         credentials,
-      });
+      };
+      if(editing) await storageApi.updateProvider(editing.id,payload);
+      else await storageApi.createProvider(payload);
 
       setOpen(false);
       setForm(blankForm);
@@ -174,7 +175,7 @@ export function StorageSettingsPage() {
     }
   };
 
-  const healthyCount = items.filter((p) => p.health === 'healthy' || p.is_enabled).length;
+  const healthyCount = items.filter((p) => p.health === 'healthy' && p.is_enabled).length;
   const defaultProvider = items.find((p) => p.is_default);
 
   return (
@@ -182,7 +183,7 @@ export function StorageSettingsPage() {
       <PageHeading
         eyebrow="HYBRID CLOUD & ON-PREMISE STORAGE"
         title="Storage connections & gateways"
-        description="Connect external SFTP servers, Wasabi / AWS S3 buckets, or local volumes. All camera uploads can be mirrored to your chosen destination."
+        description="Connect external SFTP servers, Wasabi / AWS S3 buckets, or FTP servers. Original media is stored in your external destination."
       >
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={load} disabled={loading || busy}>
@@ -191,6 +192,7 @@ export function StorageSettingsPage() {
           </Button>
           <Button
             onClick={() => {
+              setEditing(null);
               setForm(blankForm);
               setOpen(true);
             }}
@@ -255,10 +257,10 @@ export function StorageSettingsPage() {
             <span>Primary Default</span>
           </div>
           <div className="text-sm font-semibold truncate">
-            {defaultProvider ? defaultProvider.name : 'Platform Storage'}
+            {defaultProvider ? defaultProvider.name : 'No connection selected'}
           </div>
           <div className="text-[11px] text-muted uppercase font-mono">
-            {defaultProvider ? defaultProvider.backend : 'Local/Platform'}
+            {defaultProvider ? defaultProvider.backend : 'Connect external storage'}
           </div>
         </div>
 
@@ -278,9 +280,9 @@ export function StorageSettingsPage() {
         <div>
           <strong className="text-foreground block mb-0.5">How storage routing operates:</strong>
           When a camera uploads photos to port 2022, the gateway receives the stream. StudioFlow
-          immediately indexes the shot, records EXIF metadata, and mirrors a copy to the camera's
-          assigned storage connection below. If no custom server is specified, photos are retained on
-          your platform-managed primary drive.
+          transfers each completed upload to the camera's assigned external connection, then adds it
+          to the library and album. The temporary gateway copy is removed after transfer succeeds.
+          Every camera needs an enabled external destination.
         </div>
       </div>
 
@@ -427,8 +429,9 @@ export function StorageSettingsPage() {
                     <span>{isTesting ? 'Verifying…' : 'Test Connection'}</span>
                   </Button>
 
-                  {p.provider_type !== 'platform' && (
+                  {true && (
                     <>
+                      <Button size="sm" variant="outline" onClick={()=>{setEditing(p);setForm({...blankForm,...p.connection,name:p.name,backend:p.backend});setOpen(true);}}>Edit connection</Button>
                       {!p.is_default && (
                         <Button
                           size="sm"
@@ -487,7 +490,7 @@ export function StorageSettingsPage() {
           setOpen(v);
           if (!v) setError('');
         }}
-        title="Connect Storage Destination"
+        title={editing ? "Edit Storage Connection" : "Connect Storage Destination"}
         description="Configure an external SFTP server or S3 bucket where raw photos and final edits will be stored."
       >
         <form className="form-stack" onSubmit={handleSave}>
@@ -506,6 +509,7 @@ export function StorageSettingsPage() {
           <label>
             Storage Protocol
             <select
+              disabled={!!editing}
               value={form.backend}
               onChange={(e) =>
                 setForm({
@@ -558,8 +562,8 @@ export function StorageSettingsPage() {
                 <label>
                   Access Key ID
                   <input
-                    required
-                    placeholder="AKIA..."
+                    required={!editing}
+                    placeholder={editing?"Leave blank to keep saved key":"AKIA..."}
                     value={form.accessKeyId}
                     onChange={(e) => setForm({ ...form, accessKeyId: e.target.value })}
                   />
@@ -568,8 +572,8 @@ export function StorageSettingsPage() {
                   Secret Access Key
                   <input
                     type="password"
-                    required
-                    placeholder="Secret Key"
+                    required={!editing}
+                    placeholder={editing?"Leave blank to keep saved secret":"Secret Key"}
                     value={form.secretAccessKey}
                     onChange={(e) => setForm({ ...form, secretAccessKey: e.target.value })}
                   />
@@ -613,14 +617,16 @@ export function StorageSettingsPage() {
                   Password
                   <input
                     type="password"
-                    required
-                    placeholder="Password"
+                    required={!editing && !form.privateKey}
+                    placeholder={editing?"Leave blank to keep saved password":"Password"}
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                   />
                 </label>
               </div>
 
+              {form.backend==='sftp'&&<><label>SSH private key (optional alternative to password)<textarea rows={3} value={form.privateKey} onChange={e=>setForm({...form,privateKey:e.target.value})} placeholder={editing?'Leave blank to keep saved key':'Paste PEM private key'}/></label><label>Key passphrase (optional)<input type="password" value={form.passphrase} onChange={e=>setForm({...form,passphrase:e.target.value})}/></label></>}
+              {form.backend==='ftp'&&<label className="flex items-center gap-2"><input type="checkbox" checked={form.secure} onChange={e=>setForm({...form,secure:e.target.checked})}/>Use explicit TLS (FTPS)</label>}
               <label>
                 Remote Storage Directory
                 <input

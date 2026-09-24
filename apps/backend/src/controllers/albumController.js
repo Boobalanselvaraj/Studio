@@ -9,6 +9,7 @@ async function listAlbums(req, res, next) {
           select: { id: true, title: true },
         },
         album_assets: {
+          where: {asset:{is_soft_deleted:false}},
           include: {
             asset: true,
           },
@@ -64,7 +65,7 @@ async function createAlbum(req, res, next) {
       if (Array.isArray(asset_ids) && asset_ids.length > 0) {
         // Verify assets belong to studio
         const validAssets = await tx.assets.findMany({
-          where: { id: { in: asset_ids }, studio_id: req.studioId },
+          where: { id: { in: asset_ids }, studio_id: req.studioId, is_soft_deleted:false },
           select: { id: true },
         });
 
@@ -102,6 +103,7 @@ async function getAlbumById(req, res, next) {
       include: {
         event: { select: { id: true, title: true } },
         album_assets: {
+          where: {asset:{is_soft_deleted:false}},
           include: { asset: true },
           orderBy: { sort_order: 'asc' },
         },

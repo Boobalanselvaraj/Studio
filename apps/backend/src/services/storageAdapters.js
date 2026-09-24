@@ -141,7 +141,7 @@ async function withFTP(creds, fn) {
       port: parseInt(creds.port || '21', 10),
       user: creds.username || creds.user,
       password: creds.password,
-      secure: creds.secure === true || creds.secure === 'implicit',
+      secure: creds.secure === 'implicit' ? 'implicit' : creds.secure === true,
     });
     return await fn(client);
   } finally {

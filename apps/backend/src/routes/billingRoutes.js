@@ -6,7 +6,7 @@ router.get('/usage', billingController.getUsage);
 router.get('/profile', billingController.getProfile);
 router.get('/invoices', billingController.getInvoices);
 router.get('/plans', billingController.getPlans);
-router.post('/request-upgrade', billingController.requestUpgrade);
-router.get('/requests', billingController.getAllocationRequests);
+router.all('/request-upgrade', (req,res)=>res.status(410).json({error:'Allocation requests have been replaced by support tickets. Use /support-tickets.'}));
+router.get('/requests', (req,res)=>res.status(410).json({error:'Use /studio/support-tickets for issue tracking.'}));
 
 module.exports = router;

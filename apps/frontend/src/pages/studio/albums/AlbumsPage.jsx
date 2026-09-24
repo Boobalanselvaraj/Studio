@@ -1,3 +1,5 @@
+import { MediaBrowser } from '../../../components/gallery/MediaBrowser';
+import { ShareQr } from '../../../components/gallery/ShareQr';
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   FolderOpen,
@@ -66,6 +68,7 @@ export function AlbumsPage() {
   // Share Modal states (2 Types of Gallery Access)
   const [shareTab, setShareTab] = useState('private'); // 'private' | 'token'
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [canShare,setCanShare]=useState(false);
   const [canDownload, setCanDownload] = useState(true);
   const [canFavorite, setCanFavorite] = useState(true);
   const [tokenExpiresHours, setTokenExpiresHours] = useState(72);
@@ -77,7 +80,7 @@ export function AlbumsPage() {
       setLoading(true);
       const [albumRes, treeRes, custRes] = await Promise.allSettled([
         albumsApi.list(),
-        foldersApi.getTree(),
+        foldersApi.getServerExplorer(),
         customersApi.list(),
       ]);
 
@@ -89,13 +92,7 @@ export function AlbumsPage() {
         }
       }
 
-      if (treeRes.status === 'fulfilled' && Array.isArray(treeRes.value)) {
-        const flatten = (nodes) =>
-          nodes.flatMap((n) => [...(n.assets || []), ...flatten(n.children || [])]);
-        const all = flatten(treeRes.value);
-        const map = new Map(all.map((a) => [a.id, a]));
-        setAvailableAssets([...map.values()]);
-      }
+      if(treeRes.status === 'fulfilled') setAvailableAssets(treeRes.value.assets || []);
 
       if (custRes.status === 'fulfilled' && Array.isArray(custRes.value)) {
         setCustomers(custRes.value);
@@ -224,6 +221,7 @@ export function AlbumsPage() {
       await customersApi.shareAlbum({
         album_id: activeAlbum.id,
         customer_id: selectedCustomerId,
+        can_share: canShare,
         can_download: canDownload,
         can_favorite: canFavorite,
       });
@@ -392,7 +390,7 @@ export function AlbumsPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="album-editorial-grid">
           {filteredAlbums.map((album) => {
             const photoCount = album.album_assets?.length || 0;
             const coverAsset =
@@ -411,6 +409,7 @@ export function AlbumsPage() {
                   className="aspect-[16/10] w-full bg-surface-muted relative overflow-hidden cursor-pointer"
                   onClick={() => {
                     setActiveAlbum(album);
+                    setSelectedAssetIds([]);
                     setManageAssetsModal(true);
                   }}
                 >
@@ -556,6 +555,7 @@ export function AlbumsPage() {
       {/* MODAL: CREATE ALBUM                                                       */}
       {/* ========================================================================= */}
       <Modal
+        size="wide"
         open={createModal}
         onOpenChange={setCreateModal}
         title="Create New Shoot Album"
@@ -615,47 +615,7 @@ export function AlbumsPage() {
               </button>
             </div>
 
-            <div className="max-h-48 overflow-y-auto p-2 bg-surface-muted rounded-lg border border-border grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {availableAssets.length === 0 ? (
-                <p className="col-span-full text-xs text-muted text-center py-4">
-                  No photos in library yet. Connect your camera to ingest frames.
-                </p>
-              ) : (
-                availableAssets.map((asset) => {
-                  const isChecked = selectedAssetIds.includes(asset.id);
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() =>
-                        setSelectedAssetIds((prev) =>
-                          prev.includes(asset.id)
-                            ? prev.filter((id) => id !== asset.id)
-                            : [...prev, asset.id]
-                        )
-                      }
-                      className={`relative aspect-[4/3] rounded-lg overflow-hidden border cursor-pointer ${
-                        isChecked ? 'border-brand-primary ring-2 ring-brand-primary/40' : 'border-border'
-                      }`}
-                    >
-                      <img
-                        src={`/api/studio/folders/assets/${asset.id}/view`}
-                        alt={asset.filename}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                      {isChecked && (
-                        <div className="absolute top-1 right-1 p-0.5 rounded-full bg-brand-primary text-white">
-                          <Check size={12} />
-                        </div>
-                      )}
-                      <span className="absolute bottom-1 left-1 right-1 text-[9px] bg-black/60 text-white px-1 py-0.5 rounded truncate">
-                        {asset.filename}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            <MediaBrowser assets={availableAssets} selectedIds={selectedAssetIds} onSelect={id=>setSelectedAssetIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}/>
           </div>
 
           <div className="modal-actions pt-3">
@@ -736,72 +696,15 @@ export function AlbumsPage() {
       {/* MODAL: MANAGE ALBUM ASSETS & PHOTOS                                       */}
       {/* ========================================================================= */}
       <Modal
+        size="wide"
         open={manageAssetsModal}
         onOpenChange={setManageAssetsModal}
         title={activeAlbum ? `📁 ${activeAlbum.title}` : 'Album Photos'}
         description={`Manage ${activeAlbum?.album_assets?.length || 0} photo(s) in this gallery.`}
       >
         <div className="space-y-4">
-          {activeAlbum?.album_assets?.length === 0 ? (
-            <div className="p-8 text-center border border-dashed border-border rounded-xl space-y-2">
-              <FileImage size={32} className="text-muted mx-auto opacity-50" />
-              <p className="text-xs text-muted">This album currently has no photos.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto p-1">
-              {activeAlbum?.album_assets?.map((aa) => {
-                const asset = aa.asset;
-                const isCover = activeAlbum.cover_asset_id === asset.id;
-                return (
-                  <div
-                    key={asset.id}
-                    className={`group relative rounded-xl overflow-hidden border bg-surface-2 ${
-                      isCover ? 'ring-2 ring-brand-primary border-brand-primary' : 'border-border'
-                    }`}
-                  >
-                    <div className="aspect-[4/3] w-full overflow-hidden bg-black/5 relative">
-                      <img
-                        src={`/api/studio/folders/assets/${asset.id}/view`}
-                        alt={asset.filename}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        loading="lazy"
-                      />
-                      {isCover && (
-                        <span className="absolute top-2 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-primary text-white shadow-sm">
-                          Cover Art
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="p-2 space-y-1">
-                      <p className="text-[11px] font-semibold text-foreground truncate" title={asset.filename}>
-                        {asset.filename}
-                      </p>
-                      <div className="flex items-center justify-between gap-1 pt-1">
-                        {!isCover && (
-                          <button
-                            type="button"
-                            onClick={() => handleSetCover(asset.id)}
-                            className="text-[10px] text-brand-primary hover:underline font-semibold"
-                          >
-                            Set Cover
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAsset(asset.id)}
-                          className="text-[10px] text-red-500 hover:underline ml-auto"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
+          <MediaBrowser assets={(activeAlbum?.album_assets || []).map(aa=>aa.asset).filter(Boolean)} onCover={handleSetCover} onRemove={handleRemoveAsset}/>
+          <details><summary className="cursor-pointer font-semibold">Add photos from library</summary><MediaBrowser assets={availableAssets.filter(a=>!activeAlbum?.album_assets?.some(aa=>aa.asset_id===a.id))} selectedIds={selectedAssetIds} onSelect={id=>setSelectedAssetIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id])}/><Button disabled={!selectedAssetIds.length} onClick={async()=>{await handleAddPhotosToAlbum(selectedAssetIds);setSelectedAssetIds([]);}}>Add selected photos</Button></details>
           <div className="modal-actions pt-2">
             <Button onClick={() => setManageAssetsModal(false)}>Close</Button>
           </div>
@@ -868,7 +771,8 @@ export function AlbumsPage() {
               <div className="p-3 bg-surface-muted rounded-xl border border-border space-y-2">
                 <p className="text-xs font-semibold text-foreground">Client Permissions</p>
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={canShare} onChange={e=>setCanShare(e.target.checked)}/>Allow customer to create a guest link and QR code</label>
+              <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
                     <input
                       type="checkbox"
                       checked={canDownload}
@@ -944,6 +848,7 @@ export function AlbumsPage() {
                       {copied ? 'Copied' : 'Copy'}
                     </Button>
                   </div>
+                  <ShareQr url={generatedGuestUrl} title={activeAlbum?.title}/>
                   <p className="text-[11px] text-muted">
                     Guests can view photos and favorite them. Link expires automatically in {tokenExpiresHours} hours.
                   </p>

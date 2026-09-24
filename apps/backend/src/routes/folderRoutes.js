@@ -3,6 +3,9 @@ const router = express.Router();
 const folderController = require('../controllers/folderController');
 const { requireStudioRole } = require('../middlewares/rbac');
 
+router.patch('/assets/:id', requireStudioRole(['studio_owner','studio_manager']), folderController.updateAsset);
+router.delete('/assets/:id', requireStudioRole(['studio_owner','studio_manager']), folderController.deleteAsset);
+router.post('/:id/assets', requireStudioRole(['studio_owner','studio_manager','photographer']), folderController.addFolderAssets);
 router.get('/tree', folderController.getTree);
 router.get('/server-explorer', folderController.getServerExplorerData);
 router.post('/batch-assign', requireStudioRole(['studio_owner', 'studio_manager', 'photographer']), folderController.batchAssignAssets);

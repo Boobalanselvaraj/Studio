@@ -23,7 +23,6 @@ const StorageSettingsPage = lazy(() => import('./pages/studio/storage/StorageSet
 const BrandingSettingsPage = lazy(() => import('./pages/studio/branding/BrandingSettingsPage').then(module => ({ default: module.BrandingSettingsPage })));
 const BillingPage = lazy(() => import('./pages/studio/billing/BillingPage').then(module => ({ default: module.BillingPage })));
 const AdminDashboardPage = lazy(() => import('./pages/super-admin/AdminDashboardPage').then(module => ({ default: module.AdminDashboardPage })));
-const StorageServersPage = lazy(() => import('./pages/super-admin/StorageServersPage').then(module => ({ default: module.StorageServersPage })));
 const SupportTicketsPage = lazy(() => import('./pages/super-admin/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
 const BillingPlansPage = lazy(() => import('./pages/super-admin/BillingPlansPage').then(module => ({ default: module.BillingPlansPage })));
 const CustomerGalleriesPage = lazy(() => import('./pages/customer/CustomerGalleriesPage').then(module => ({ default: module.CustomerGalleriesPage })));
@@ -74,13 +73,14 @@ export function App() {
               <Route path="storage" element={<StorageSettingsPage />} />
               <Route path="branding" element={<BrandingSettingsPage />} />
               <Route path="billing" element={<BillingPage />} />
+              <Route path="support" element={<SupportTicketsPage studio />} />
             </Route>
 
             {/* Super Admin Zone */}
             <Route path="/admin" element={<Guard admin><AdminLayout /></Guard>}>
               <Route index element={<Navigate to="/admin/studios" replace />} />
               <Route path="studios" element={<AdminDashboardPage />} />
-              <Route path="storage-servers" element={<StorageServersPage />} />
+              <Route path="storage-servers" element={<Navigate to="/admin/studios" replace />} />
               <Route path="support" element={<SupportTicketsPage />} />
               <Route path="billing-plans" element={<BillingPlansPage />} />
             </Route>

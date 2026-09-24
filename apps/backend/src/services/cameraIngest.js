@@ -6,9 +6,18 @@ const prisma=require('../config/prisma');
 const env=require('../config/env');
 const {writeObject}=require('./storageAdapters');
 const types={'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp','.cr3':'image/x-canon-cr3','.cr2':'image/x-canon-cr2','.nef':'image/x-nikon-nef','.arw':'image/x-sony-arw','.dng':'image/x-adobe-dng','.mp4':'video/mp4','.mov':'video/quicktime'};
-function cameraRoot(camera){return path.resolve(env.STORAGE_ROOT_PATH,'studios',camera.studio.slug,'cameras',camera.sftpgo_username);}
+function cameraRoot(camera) {
+  const slug = camera.studio?.slug || 'studio';
+  const directPath = path.resolve(env.STORAGE_ROOT_PATH, slug, 'cameras', camera.sftpgo_username);
+  const studiosPath = path.resolve(env.STORAGE_ROOT_PATH, 'studios', slug, 'cameras', camera.sftpgo_username);
+  if (fs.existsSync(directPath)) return directPath;
+  if (fs.existsSync(studiosPath)) return studiosPath;
+  return directPath;
+}
 async function ingest(camera,relative) {
-  const root=await fsp.realpath(cameraRoot(camera));
+  const rootDir = cameraRoot(camera);
+  await fsp.mkdir(rootDir, { recursive: true });
+  const root=await fsp.realpath(rootDir);
   const file=await fsp.realpath(path.resolve(root,relative));
   const rel=path.relative(root,file);
   if(!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Upload path outside camera directory');
@@ -22,8 +31,10 @@ async function ingest(camera,relative) {
   // Optional: transfer to studio-owned external storage provider
   // No provider = file indexed from local SFTP landing zone (no platform storage used)
   const provider = camera.storage_provider_id
-    ? await prisma.storage_providers.findFirst({where:{id:camera.storage_provider_id,studio_id:camera.studio_id,is_enabled:true},include:{storage_credentials:true}})
+    ? await prisma.storage_providers.findFirst({where:{id:camera.storage_provider_id,studio_id:camera.studio_id,is_enabled:true,backend:{in:["sftp","ftp","s3"]}},include:{storage_credentials:true}})
     : null;
+
+  if (!provider) throw new Error('Camera requires an enabled external storage connection; upload retained for retry');
 
   let objectKey = camera.studio_id+'/'+camera.id+'/'+digest+'/'+path.basename(file);
   let storageProviderId = null;

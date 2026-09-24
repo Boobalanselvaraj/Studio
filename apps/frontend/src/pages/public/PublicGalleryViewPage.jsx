@@ -1,3 +1,4 @@
+import {MediaBrowser} from '../../components/gallery/MediaBrowser';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -183,50 +184,7 @@ export function PublicGalleryViewPage() {
           )}
         </div>
 
-        {/* Photos Grid */}
-        {assets.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center">
-            <ImageIcon size={48} className="text-muted mb-3 opacity-40" />
-            <h3 className="text-lg font-medium mb-1">No Photos in Gallery</h3>
-            <p className="text-sm text-muted">Photos added by the studio will appear here automatically.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {assets.map((asset, index) => (
-              <div
-                key={asset.id}
-                onClick={() => setPreviewAssetIndex(index)}
-                className="group relative aspect-square rounded-xl overflow-hidden bg-surface-2 border border-border cursor-pointer shadow-sm hover:shadow-md transition-all duration-200"
-              >
-                <img
-                  src={asset.thumbnailUrl}
-                  alt={asset.filename}
-                  loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-2.5 text-white">
-                  <span className="text-xs truncate max-w-[70%] font-medium">{asset.filename}</span>
-                  <div className="flex items-center gap-1.5">
-                    {asset.downloadUrl && (
-                      <a
-                        href={asset.downloadUrl}
-                        download={asset.filename}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="p-1 rounded bg-white/20 hover:bg-white/40 text-white transition-colors"
-                        title="Download photo"
-                      >
-                        <Download size={13} />
-                      </a>
-                    )}
-                    <Maximize2 size={13} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <MediaBrowser assets={assets} canDownload={false}/>
       </main>
 
       {/* Fullscreen Photo Lightbox Modal */}

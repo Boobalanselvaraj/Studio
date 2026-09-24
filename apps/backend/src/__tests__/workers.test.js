@@ -111,7 +111,7 @@ describe('queue worker handlers', () => {
     });
   });
 
-  it('writes daily platform storage usage snapshots', async () => {
+  it('writes daily external storage usage snapshots', async () => {
     prisma.storage_providers.findMany.mockResolvedValue([{ id: 'storage-1' }]);
     prisma.assets.aggregate.mockResolvedValue({ _sum: { file_size_bytes: BigInt(4096) } });
     prisma.storage_usage_snapshots.upsert.mockResolvedValue({ id: 'snapshot-1' });
@@ -126,7 +126,7 @@ describe('queue worker handlers', () => {
     expect(prisma.storage_providers.findMany).toHaveBeenCalledWith({
       where: {
         studio_id: studioId,
-        provider_type: 'platform',
+        provider_type: 'studio_owned',
       },
       select: { id: true },
     });

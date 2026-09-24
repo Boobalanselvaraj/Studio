@@ -90,6 +90,9 @@ export const eventsApi = {
 };
 
 export const foldersApi = {
+ updateAsset: async(id,data)=>(await api.patch('/studio/folders/assets/'+id,data)).data,
+ deleteAsset: async(id)=>(await api.delete('/studio/folders/assets/'+id)).data,
+ addFolderAssets: async(id,asset_ids)=>(await api.post('/studio/folders/'+id+'/assets',{asset_ids})).data,
   getTree: async () => {
     const res = await api.get('/studio/folders/tree');
     return res.data;
@@ -136,6 +139,7 @@ export const foldersApi = {
 };
 
 export const camerasApi = {
+  repairGateway: async(id,password)=>(await api.post(`/studio/cameras/${id}/repair-gateway`,{password})).data,
   list: async () => {
     const res = await api.get('/studio/cameras');
     return res.data;

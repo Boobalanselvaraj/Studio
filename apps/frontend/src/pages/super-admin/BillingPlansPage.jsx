@@ -235,7 +235,7 @@ export function BillingPlansPage() {
             Platform Billing & Invoicing Monitor
           </h2>
           <p className="text-sm text-muted">
-            Monitor studio billing across tenants, issue itemized invoices (licenses, dedicated servers, extra quota), and record audited payments.
+            Monitor studio billing across tenants, issue itemized invoices (licenses, external server services, support), and record audited payments.
           </p>
         </div>
 
@@ -516,7 +516,7 @@ export function BillingPlansPage() {
           if (!v) setError('');
         }}
         title="Create Studio Invoice"
-        description="Issue an itemized bill for a studio tenant covering software, dedicated storage servers, and quota."
+        description="Issue an itemized bill for a studio tenant covering software, external server services, and support."
       >
         <form onSubmit={handleCreateInvoice} className="form-stack space-y-3">
           {error && <p className="form-error">{error}</p>}
@@ -573,8 +573,8 @@ export function BillingPlansPage() {
                   setLineItems([
                     ...lineItems,
                     {
-                      description: 'Custom Service / Additional Storage',
-                      category: 'Storage',
+                      description: 'Custom Service / Support',
+                      category: 'Service',
                       quantity: 1,
                       unit_price: 500,
                       amount: 500,

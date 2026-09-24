@@ -112,9 +112,9 @@ export function BillingPage() {
         title="Billing & Subscription"
         description="A clear breakdown of your studio application license, assigned dedicated storage server, and official invoices."
       >
-        <Button onClick={() => setOpenModal(true)}>
+        <Button onClick={() => { window.location.href="/studio/support"; }}>
           <Plus size={16} />
-          Request Service / Quota Upgrade
+          Contact support
         </Button>
       </PageHeading>
 
@@ -251,7 +251,7 @@ export function BillingPage() {
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
                     <p className="font-semibold mb-1">No Dedicated Server Assigned</p>
                     <p className="text-[11px]">
-                      Your platform administrator has not assigned a dedicated server yet. You can connect your own server in Storage settings.
+                      Connect your external server in Storage settings to begin uploading.
                     </p>
                   </div>
                 )}
@@ -417,64 +417,7 @@ export function BillingPage() {
         </Modal>
       )}
 
-      {/* Modal: Request Service / Quota Upgrade */}
-      <Modal
-        open={openModal}
-        onOpenChange={(v) => {
-          setOpenModal(v);
-          if (!v) {
-            setErrorMsg('');
-            setSuccessMsg('');
-          }
-        }}
-        title="Request Service / Storage Upgrade"
-        description="Submit a request to the platform administration for additional storage capacity, camera allowances, or custom dedicated server requirements."
-      >
-        <form className="form-stack" onSubmit={handleUpgradeRequest}>
-          {errorMsg && <p className="form-error">{errorMsg}</p>}
-          {successMsg && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-              {successMsg}
-            </p>
-          )}
 
-          <label>
-            Desired Total Storage Capacity (GB)
-            <input
-              type="number"
-              min={100}
-              step={50}
-              required
-              value={requestedQuota}
-              onChange={(e) => setRequestedQuota(Number(e.target.value))}
-            />
-          </label>
-
-          <label>
-            Upgrade Notes & Requirements
-            <textarea
-              rows={3}
-              placeholder="e.g. Requesting dedicated Wasabi/S3 bucket or extra 5 camera Wi-Fi transmission licenses for upcoming wedding peak season…"
-              value={upgradeNotes}
-              onChange={(e) => setUpgradeNotes(e.target.value)}
-            />
-          </label>
-
-          <div className="modal-actions">
-            <Button
-              variant="outline"
-              type="button"
-              disabled={busy}
-              onClick={() => setOpenModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : 'Submit Upgrade Request'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

@@ -17,11 +17,6 @@ router.put('/studios/:id/allocations', adminController.updateStudioBilling);
 router.patch('/studios/:id/allocations', adminController.updateStudioBilling);
 
 // Storage connections (Platform provisioning & maintenance)
-router.get('/storage-servers', adminController.listAllStorageServers);
-router.post('/storage-servers', adminController.createStorageServer);
-router.put('/storage-servers/:id', adminController.updateStorageServer);
-router.patch('/storage-servers/:id', adminController.updateStorageServer);
-router.delete('/storage-servers/:id', adminController.deleteStorageServer);
 router.get('/studios/:id/storage-connections', adminController.listStudioStorageConnections);
 router.post('/studios/:id/storage-connections', adminController.provisionPlatformStorage);
 
@@ -35,11 +30,7 @@ router.delete('/studios/:id/invoices/:invoiceId', adminController.deleteStudioIn
 router.post('/studios/:id/invoices/:invoiceId/manual-payment', adminController.recordManualPayment);
 
 // Studio Allocation Requests & Support Inquiries
-router.get('/allocation-requests', adminController.listAllocationRequests);
-router.post('/allocation-requests', adminController.createAllocationRequest);
-router.patch('/allocation-requests/:id', adminController.updateAllocationRequest);
-router.delete('/allocation-requests/:id', adminController.deleteAllocationRequest);
-router.post('/allocation-requests/:id/resolve', adminController.resolveAllocationRequest);
+router.all('/allocation-requests*', (req,res)=>res.status(410).json({error:'Allocation requests have been replaced by support tickets. Use /support-tickets.'}));
 
 // Billing Components (Versioned per-studio components)
 router.get('/studios/:id/billing-components', adminController.listBillingComponents);
@@ -49,4 +40,8 @@ router.post('/studios/:id/billing-components', adminController.createBillingComp
 router.get('/billing-plans', billingController.getPlans);
 router.post('/billing-plans', adminController.createBillingPlan);
 
+const support = require('../controllers/supportController');
+router.get('/support-tickets', support.list);
+router.post('/support-tickets', support.create);
+router.patch('/support-tickets/:id', support.update);
 module.exports = router;

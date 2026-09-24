@@ -14,18 +14,21 @@ services:
       PORT: 4000
       # External/Host PostgreSQL: When running in Docker on Windows/Mac, host.docker.internal points to host machine
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres_secure_password@host.docker.internal:5432/photo_studio_db}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
-      SFTPGO_HOST: http://sftpgo:8080
-      STORAGE_ROOT_PATH: /storage
+      REDIS_HOST: ${DOCKER_REDIS_HOST:-redis}
+      REDIS_PORT: ${DOCKER_REDIS_PORT:-6379}
+      RABBITMQ_HOST: ${DOCKER_RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${DOCKER_RABBITMQ_PORT:-5672}
+      RABBITMQ_URL: ${DOCKER_RABBITMQ_URL:-amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672}
+      SFTPGO_HOST: ${DOCKER_SFTPGO_HOST:-http://sftpgo:8080}
+      SFTPGO_API_URL: ${DOCKER_SFTPGO_API_URL:-http://sftpgo:8080/api/v2}
       SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_12345}
       JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_12345}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-01234567890123456789012345678901}
+      STORAGE_ROOT_PATH: /srv/sftpgo/data
     volumes:
-      - ../storage:/storage
       - ./backend:/usr/src/app
       - /usr/src/app/node_modules
+      - sftpgo_ingest_data:/srv/sftpgo/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -54,3 +57,6 @@ networks:
   studio_network:
     name: studio_network
     driver: bridge
+
+volumes:
+  sftpgo_ingest_data:
