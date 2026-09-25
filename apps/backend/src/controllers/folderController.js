@@ -4,8 +4,10 @@ const prisma = require('../config/prisma');
 const env = require('../config/env');
 const { deliverAsset } = require('../services/mediaAccess');
 const { publishToQueue } = require('../config/rabbitmq');
+const { deleteObject, deleteDirectory } = require('../services/storageAdapters');
 
 const SUPPORTED_MEDIA_EXTS = new Set([
+
   '.jpg', '.jpeg', '.png', '.webp', '.gif',
   '.cr2', '.cr3', '.arw', '.nef', '.dng',
   '.tif', '.tiff', '.mp4', '.mov',
@@ -409,6 +411,7 @@ async function publishGallery(req, res, next) {
 async function deleteFolder(req, res, next) {
   try {
     const folderId = req.params.id;
+    const deleteFiles = req.query.delete_files === 'true' || req.body?.delete_files === true;
 
     const folder = await prisma.folders.findFirst({
       where: { id: folderId, studio_id: req.studioId },
@@ -416,6 +419,32 @@ async function deleteFolder(req, res, next) {
 
     if (!folder) {
       return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    const descendantIds = await getDescendantFolderIds(folderId, req.studioId);
+    const allFolderIds = [folderId, ...descendantIds];
+
+    if (deleteFiles) {
+      const items = await prisma.folder_items.findMany({
+        where: { folder_id: { in: allFolderIds }, item_type: 'asset' },
+        select: { item_id: true },
+      });
+      const assetIds = [...new Set(items.map((i) => i.item_id))];
+      if (assetIds.length > 0) {
+        const assets = await prisma.assets.findMany({
+          where: { id: { in: assetIds }, studio_id: req.studioId },
+        });
+        for (const asset of assets) {
+          await deletePhysicalAsset(asset);
+        }
+        await cleanupAssetsFromDb(assetIds, req.studioId);
+      }
+    }
+
+    if (descendantIds.length > 0) {
+      await prisma.folders.deleteMany({
+        where: { id: { in: descendantIds }, studio_id: req.studioId },
+      });
     }
 
     await prisma.folders.delete({
@@ -427,6 +456,7 @@ async function deleteFolder(req, res, next) {
     next(err);
   }
 }
+
 
 async function getServerExplorerData(req, res, next) {
   try {
@@ -589,11 +619,200 @@ async function updateAsset(req,res,next){try{
  if(path.extname(filename).toLowerCase()!==path.extname(asset.filename).toLowerCase())return res.status(400).json({error:'Keep the original file extension when renaming'});
  const updated=await prisma.assets.update({where:{id:asset.id},data:{filename:filename.trim()}});res.json(updated);
 }catch(e){next(e);}}
-async function deleteAsset(req,res,next){try{
- const result=await prisma.assets.updateMany({where:{id:req.params.id,studio_id:req.studioId,is_soft_deleted:false},data:{is_soft_deleted:true,deleted_at:new Date()}});
- if(!result.count)return res.status(404).json({error:'File not found'});
- res.json({message:'File removed from library and galleries. Original retained in external storage.'});
-}catch(e){next(e);}}
+async function deletePhysicalAsset(asset) {
+  let deleted = false;
+  if (!asset) return false;
+
+  // 1. Delete from remote storage provider if configured
+  if (asset.storage_provider_id) {
+    try {
+      const provider = await prisma.storage_providers.findFirst({
+        where: { id: asset.storage_provider_id },
+        include: { storage_credentials: true },
+      });
+      if (provider) {
+        const key = asset.object_key || asset.original_path;
+        if (key) {
+          await deleteObject(provider, key);
+          deleted = true;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Storage] Remote deletion warning for asset ${asset.id}:`, err.message);
+    }
+  }
+
+  // 2. Also physically unlink any local file if present
+  const root = env.STORAGE_ROOT_PATH ? path.resolve(env.STORAGE_ROOT_PATH) : path.resolve(process.cwd(), './storage');
+  const candidates = [
+    asset.original_path ? path.resolve(process.cwd(), asset.original_path) : null,
+    asset.original_path ? path.resolve(process.cwd(), '../../', asset.original_path) : null,
+    asset.original_path ? path.resolve(root, asset.original_path.replace(/^[/\\]+/, '')) : null,
+    asset.object_key ? path.resolve(root, asset.object_key.replace(/^[/\\]+/, '')) : null,
+  ].filter(Boolean);
+
+  for (const cand of candidates) {
+    try {
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        fs.unlinkSync(cand);
+        deleted = true;
+      }
+    } catch (_) {}
+  }
+
+  return deleted;
+}
+
+async function cleanupAssetsFromDb(assetIds, studioId) {
+  if (!assetIds || assetIds.length === 0) return;
+
+  // 1. Clean folder_items
+  await prisma.folder_items.deleteMany({
+    where: { item_id: { in: assetIds }, item_type: 'asset' },
+  }).catch(() => {});
+
+  // 2. Clear album cover references
+  await prisma.albums.updateMany({
+    where: { cover_asset_id: { in: assetIds } },
+    data: { cover_asset_id: null },
+  }).catch(() => {});
+
+  // 3. Clear album_assets
+  await prisma.album_assets.deleteMany({
+    where: { asset_id: { in: assetIds } },
+  }).catch(() => {});
+
+  // 4. Clear asset_tags
+  await prisma.asset_tags.deleteMany({
+    where: { asset_id: { in: assetIds } },
+  }).catch(() => {});
+
+  // 5. Delete asset records
+  await prisma.assets.deleteMany({
+    where: { id: { in: assetIds }, studio_id: studioId },
+  }).catch(() => {});
+}
+
+async function deleteAsset(req, res, next) {
+  try {
+    const asset = await prisma.assets.findFirst({
+      where: { id: req.params.id, studio_id: req.studioId },
+    });
+    if (!asset) return res.status(404).json({ error: 'File not found' });
+
+    await deletePhysicalAsset(asset);
+    await cleanupAssetsFromDb([asset.id], req.studioId);
+
+    res.json({
+      success: true,
+      message: `File '${asset.filename}' permanently deleted from storage server and studio library.`,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function bulkDeleteAssets(req, res, next) {
+  try {
+    const { asset_ids } = req.body;
+    if (!Array.isArray(asset_ids) || !asset_ids.length) {
+      return res.status(400).json({ error: 'Select files to delete' });
+    }
+
+    const uniqueIds = [...new Set(asset_ids)];
+    const assets = await prisma.assets.findMany({
+      where: { id: { in: uniqueIds }, studio_id: req.studioId },
+    });
+
+    if (!assets.length) {
+      return res.status(404).json({ error: 'No matching files found to delete' });
+    }
+
+    let storageDeletedCount = 0;
+    for (const a of assets) {
+      const removed = await deletePhysicalAsset(a);
+      if (removed) storageDeletedCount++;
+    }
+
+    await cleanupAssetsFromDb(assets.map((a) => a.id), req.studioId);
+
+    res.json({
+      success: true,
+      message: `Permanently deleted ${assets.length} file(s) from storage server and studio library.`,
+      count: assets.length,
+      storage_deleted_count: storageDeletedCount,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function deleteProviderFolder(req, res, next) {
+  try {
+    const { provider_id, folder_path } = req.body;
+    if (!folder_path || typeof folder_path !== 'string') {
+      return res.status(400).json({ error: 'folder_path is required' });
+    }
+
+    const cleanPath = folder_path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!cleanPath) {
+      return res.status(400).json({ error: 'Cannot delete root storage directory' });
+    }
+
+    let provider = null;
+    if (provider_id && provider_id !== 'local') {
+      provider = await prisma.storage_providers.findFirst({
+        where: { id: provider_id, studio_id: req.studioId },
+        include: { storage_credentials: true },
+      });
+      if (!provider) {
+        return res.status(404).json({ error: 'Storage provider not found' });
+      }
+    } else {
+      provider = await prisma.storage_providers.findFirst({
+        where: { studio_id: req.studioId, backend: 'local' },
+        include: { storage_credentials: true },
+      }) || { backend: 'local', studio_id: req.studioId };
+    }
+
+    // Find all assets in DB within this folder path
+    const candidateAssets = await prisma.assets.findMany({
+      where: {
+        studio_id: req.studioId,
+        ...(provider.id ? { storage_provider_id: provider.id } : {}),
+      },
+    });
+
+    const matchingAssets = candidateAssets.filter((a) => {
+      const p = (a.object_key || a.original_path || '').replace(/\\/g, '/');
+      return p.includes(cleanPath);
+    });
+
+    for (const a of matchingAssets) {
+      await deletePhysicalAsset(a);
+    }
+
+    if (matchingAssets.length > 0) {
+      await cleanupAssetsFromDb(matchingAssets.map((a) => a.id), req.studioId);
+    }
+
+    // Recursively delete directory on remote storage server
+    try {
+      await deleteDirectory(provider, cleanPath);
+    } catch (dirErr) {
+      console.warn(`[deleteProviderFolder] deleteDirectory warning for ${cleanPath}:`, dirErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Folder '${cleanPath}' and all files permanently removed from storage server.`,
+      deleted_files_count: matchingAssets.length,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
 async function addFolderAssets(req,res,next){try{
  const folder=await prisma.folders.findFirst({where:{id:req.params.id,studio_id:req.studioId}});
  if(!folder)return res.status(404).json({error:'Folder not found'});
@@ -604,7 +823,11 @@ async function addFolderAssets(req,res,next){try{
  await prisma.folder_items.createMany({data:ids.map(id=>({folder_id:folder.id,item_type:'asset',item_id:id})),skipDuplicates:true});res.json({message:'Files added to collection'});
 }catch(e){next(e);}}
 module.exports = {
- updateAsset,deleteAsset,addFolderAssets,
+ updateAsset,
+ deleteAsset,
+ bulkDeleteAssets,
+ deleteProviderFolder,
+ addFolderAssets,
   getTree,
   getServerExplorerData,
   batchAssignAssets,
@@ -617,3 +840,4 @@ module.exports = {
   bulkMove,
   delete: deleteFolder,
 };
+

@@ -115,6 +115,11 @@ export function StorageTreeExplorer({
   const [deletingAsset, setDeletingAsset] = useState(false);
   const [deleteFolderModal, setDeleteFolderModal] = useState(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
+  const [deleteProviderFolderModal, setDeleteProviderFolderModal] = useState(null);
+  const [deletingProviderFolder, setDeletingProviderFolder] = useState(false);
+  const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+  const [deletingBulk, setDeletingBulk] = useState(false);
+
 
   // React to initialCameraId if passed
   useEffect(() => {
@@ -418,10 +423,29 @@ export function StorageTreeExplorer({
               )}
               <span className="truncate">{node.name}</span>
             </div>
-            <span className="text-[10px] bg-surface-muted px-1.5 py-0.2 rounded text-muted font-mono shrink-0">
-              {node.count}
-            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] bg-surface-muted px-1.5 py-0.2 rounded text-muted font-mono shrink-0">
+                {node.count}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteProviderFolderModal({
+                    providerId,
+                    path: node.path,
+                    name: node.name,
+                    count: node.count,
+                  });
+                }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-rose-500 transition-opacity"
+                title={`Delete folder "${node.name}" from storage server`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           </div>
+
 
           {hasChildren && isExpanded && (
             <div>{renderFolderBranch(node.subfolders, providerId, depth + 1)}</div>
@@ -844,6 +868,41 @@ export function StorageTreeExplorer({
                 {isAllFolderSelected ? <CheckSquare size={13} className="text-brand-primary" /> : <Square size={13} />}
                 <span>{isAllFolderSelected ? 'Deselect Folder' : 'Select All in Folder'}</span>
               </button>
+
+              {activeNode.type === 'provider_folder' && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDeleteProviderFolderModal({
+                      providerId: activeNode.providerId,
+                      path: activeNode.path,
+                      name: activeNode.name,
+                      count: scopedAssets.length,
+                    })
+                  }
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition-all"
+                  title="Delete this entire folder and all its files from storage server"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete Folder</span>
+                </button>
+              )}
+
+              {activeNode.type === 'folder' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const f = folders.find((fol) => fol.id === activeNode.id) || { id: activeNode.id, name: activeNode.name };
+                    setDeleteFolderModal(f);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition-all"
+                  title="Delete this folder collection and its files"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete Folder</span>
+                </button>
+              )}
+
             </div>
           </div>
 
@@ -1275,7 +1334,18 @@ export function StorageTreeExplorer({
                 Assign to Client
               </Button>
             )}
+
+            <Button
+              type="button"
+              variant="outline"
+              className="text-xs py-1.5 text-rose-500 hover:text-white hover:bg-rose-600 border-rose-500/30"
+              onClick={() => setBulkDeleteModal(true)}
+            >
+              <Trash2 size={14} className="mr-1.5" />
+              Delete Selected ({selectedIds.length})
+            </Button>
           </div>
+
 
           {/* Expandable Review Selected Drawer */}
           {reviewDrawerOpen && (
@@ -1314,12 +1384,12 @@ export function StorageTreeExplorer({
         onClose={() => setLightboxAsset(null)}
       />
 
-      {/* Delete Asset Confirm Modal */}
+      {/* Delete Single Asset Confirm Modal */}
       <ConfirmModal
         open={Boolean(deleteAssetModal)}
         onOpenChange={(v) => !v && setDeleteAssetModal(null)}
         title={`Delete "${deleteAssetModal?.filename}"?`}
-        description="This will permanently remove this file from your studio library and storage destination. This action cannot be undone."
+        description="This will permanently delete this file from your connected storage server (SFTP / FTP / S3 / Local) and studio library, freeing up server disk space. This action cannot be undone."
         confirmText="Delete File"
         variant="danger"
         loading={deletingAsset}
@@ -1337,20 +1407,76 @@ export function StorageTreeExplorer({
         }}
       />
 
-      {/* Delete Folder Confirm Modal */}
+      {/* Bulk Delete Confirm Modal */}
+      <ConfirmModal
+        open={bulkDeleteModal}
+        onOpenChange={(v) => !v && setBulkDeleteModal(false)}
+        title={`Permanently Delete ${selectedIds.length} Selected File(s)?`}
+        description={`This will permanently delete all ${selectedIds.length} selected files from your remote storage server (SFTP / FTP / S3 / Local) and free up server storage space. This action cannot be undone.`}
+        confirmText={`Delete ${selectedIds.length} File(s)`}
+        variant="danger"
+        loading={deletingBulk}
+        onConfirm={async () => {
+          setDeletingBulk(true);
+          try {
+            await foldersApi.bulkDeleteAssets(selectedIds);
+            setBulkDeleteModal(false);
+            onClearSelection?.();
+            onRefresh?.();
+          } catch (err) {
+            console.error('Failed to bulk delete assets:', err);
+          } finally {
+            setDeletingBulk(false);
+          }
+        }}
+      />
+
+      {/* Delete Provider Remote Folder Confirm Modal */}
+      <ConfirmModal
+        open={Boolean(deleteProviderFolderModal)}
+        onOpenChange={(v) => !v && setDeleteProviderFolderModal(null)}
+        title={`Delete Folder "${deleteProviderFolderModal?.name || deleteProviderFolderModal?.path}" from Server?`}
+        description={`This will permanently delete the folder "${deleteProviderFolderModal?.path}" and all ${deleteProviderFolderModal?.count || 0} file(s) inside it from your remote storage server. Server disk space will be freed immediately.`}
+        confirmText="Delete Folder & Files"
+        variant="danger"
+        loading={deletingProviderFolder}
+        onConfirm={async () => {
+          setDeletingProviderFolder(true);
+          try {
+            await foldersApi.deleteProviderFolder(
+              deleteProviderFolderModal.providerId,
+              deleteProviderFolderModal.path
+            );
+            setDeleteProviderFolderModal(null);
+            if (activeNode.type === 'provider_folder' && activeNode.path === deleteProviderFolderModal.path) {
+              setActiveNode({ type: 'all', id: null, path: '', name: 'All Media Files' });
+            }
+            onRefresh?.();
+          } catch (err) {
+            console.error('Failed to delete provider folder:', err);
+          } finally {
+            setDeletingProviderFolder(false);
+          }
+        }}
+      />
+
+      {/* Delete Folder Collection Confirm Modal */}
       <ConfirmModal
         open={Boolean(deleteFolderModal)}
         onOpenChange={(v) => !v && setDeleteFolderModal(null)}
-        title={`Delete Folder "${deleteFolderModal?.name}"?`}
-        description="This will remove the folder collection. Your original media files will remain safely in your storage."
-        confirmText="Delete Folder"
+        title={`Delete Folder Collection "${deleteFolderModal?.name}"?`}
+        description="This will permanently delete this folder collection and its files from your remote storage server and studio library, freeing up server disk space."
+        confirmText="Delete Folder & Files"
         variant="danger"
         loading={deletingFolder}
         onConfirm={async () => {
           setDeletingFolder(true);
           try {
-            await foldersApi.delete(deleteFolderModal.id);
+            await foldersApi.delete(deleteFolderModal.id, true);
             setDeleteFolderModal(null);
+            if (activeNode.type === 'folder' && activeNode.id === deleteFolderModal.id) {
+              setActiveNode({ type: 'all', id: null, path: '', name: 'All Media Files' });
+            }
             onRefresh?.();
           } catch (err) {
             console.error('Failed to delete folder:', err);
@@ -1359,6 +1485,7 @@ export function StorageTreeExplorer({
           }
         }}
       />
+
     </div>
   );
 }

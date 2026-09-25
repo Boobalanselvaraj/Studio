@@ -30,6 +30,8 @@ function formatProviderDTO(p) {
       return safe;
     })(),
     created_at: p.created_at,
+    capacity_gb: p.platform_capacity_gb || null,
+    total_capacity_gb: p.platform_capacity_gb || null,
     platform_capacity_gb: p.platform_capacity_gb || null,
     platform_monthly_cost: p.platform_monthly_cost || null,
     platform_renewal_date: p.platform_renewal_date || null,
@@ -58,7 +60,7 @@ async function list(req, res, next) {
 
 async function create(req, res, next) {
   try {
-    const { name, provider_type = 'studio_owned', backend = 's3', is_default = false, credentials } = req.body;
+    const { name, provider_type = 'studio_owned', backend = 's3', is_default = false, credentials, capacity_gb, platform_capacity_gb } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Storage connection name is required' });
@@ -81,6 +83,7 @@ async function create(req, res, next) {
     }
 
     validateCredentials(backend,credentials);
+    const parsedCapacity = capacity_gb ? parseInt(capacity_gb, 10) : (platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null);
     const provider = await prisma.$transaction(async (tx) => {
       if (is_default) {
         await tx.storage_providers.updateMany({
@@ -98,6 +101,7 @@ async function create(req, res, next) {
           is_default: !!is_default,
           is_enabled: true,
           health: 'untested',
+          platform_capacity_gb: parsedCapacity,
         },
       });
 
@@ -166,7 +170,7 @@ async function testConnection(req, res, next) {
 async function update(req, res, next) {
   try {
     const providerId = req.params.id;
-    const { name, is_default, is_enabled, credentials } = req.body;
+    const { name, is_default, is_enabled, credentials, capacity_gb, platform_capacity_gb } = req.body;
 
     const existing = await prisma.storage_providers.findFirst({
       where: { id: providerId, studio_id: req.studioId },
@@ -177,6 +181,7 @@ async function update(req, res, next) {
       return res.status(404).json({ error: 'Storage connection not found' });
     }
 
+    const parsedCapacity = capacity_gb !== undefined ? (capacity_gb ? parseInt(capacity_gb, 10) : null) : (platform_capacity_gb !== undefined ? (platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null) : undefined);
 
     const updated = await prisma.$transaction(async (tx) => {
       if (is_default) {
@@ -192,6 +197,7 @@ async function update(req, res, next) {
           name: name ? name.trim() : undefined,
           is_default: is_default !== undefined ? !!is_default : undefined,
           is_enabled: is_enabled !== undefined ? !!is_enabled : undefined,
+          platform_capacity_gb: parsedCapacity !== undefined ? parsedCapacity : undefined,
           version: { increment: 1 },
           ...(credentials ? {health:"untested",tested_at:null} : {}),
         },
@@ -284,17 +290,31 @@ async function getStats(req, res, next) {
     const stats = await getStorageUsage(provider);
     let totalBytes = stats.total_bytes;
     let freeBytes = stats.free_bytes;
+    let usedBytes = stats.used_bytes;
+
+    if (usedBytes == null) {
+      const dbSum = await prisma.assets.aggregate({
+        where: { storage_provider_id: provider.id, is_soft_deleted: false },
+        _sum: { file_size_bytes: true },
+        _count: { id: true },
+      });
+      usedBytes = Number(dbSum._sum.file_size_bytes || 0);
+      if ((!stats.file_count || stats.file_count === 0) && dbSum._count.id > 0) {
+        stats.file_count = dbSum._count.id;
+      }
+    }
 
     if ((totalBytes == null || totalBytes === 0) && provider.platform_capacity_gb) {
       totalBytes = Number(provider.platform_capacity_gb) * 1024 * 1024 * 1024;
-      const used = stats.used_bytes || 0;
-      freeBytes = totalBytes > used ? totalBytes - used : 0;
+      freeBytes = totalBytes > (usedBytes || 0) ? totalBytes - (usedBytes || 0) : 0;
     }
 
     res.json({
       provider_id: provider.id,
+      capacity_gb: provider.platform_capacity_gb || null,
       platform_capacity_gb: provider.platform_capacity_gb || null,
       ...stats,
+      used_bytes: usedBytes,
       total_bytes: totalBytes,
       free_bytes: freeBytes,
     });

@@ -5,6 +5,8 @@ const { requireStudioRole } = require('../middlewares/rbac');
 
 router.patch('/assets/:id', requireStudioRole(['studio_owner','studio_manager']), folderController.updateAsset);
 router.delete('/assets/:id', requireStudioRole(['studio_owner','studio_manager']), folderController.deleteAsset);
+router.post('/assets/bulk-delete', requireStudioRole(['studio_owner','studio_manager']), folderController.bulkDeleteAssets);
+router.post('/provider-folder/delete', requireStudioRole(['studio_owner','studio_manager']), folderController.deleteProviderFolder);
 router.post('/:id/assets', requireStudioRole(['studio_owner','studio_manager','photographer']), folderController.addFolderAssets);
 router.get('/tree', folderController.getTree);
 router.get('/server-explorer', folderController.getServerExplorerData);

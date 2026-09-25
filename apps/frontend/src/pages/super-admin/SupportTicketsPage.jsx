@@ -364,7 +364,7 @@ export function SupportTicketsPage({ studio = false }) {
                   )}
                   {t.created_by_super_admin && (
                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-                      <ShieldAlert size={11} /> Created by Super Admin
+                      <ShieldAlert size={11} /> Created by Platform Provider
                     </span>
                   )}
                 </div>
@@ -547,8 +547,8 @@ export function SupportTicketsPage({ studio = false }) {
                 <div className="flex items-start gap-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-600 dark:text-indigo-400">
                   <ShieldAlert size={15} className="shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold block">Super Admin Ticket</span>
-                    <span className="text-muted">This ticket was created by the platform admin. You can only update the <strong>status</strong> field.</span>
+                    <span className="font-semibold block">Platform Provider Ticket</span>
+                    <span className="text-muted">This ticket was created by the platform provider. You can only update the <strong>status</strong> field.</span>
                   </div>
                 </div>
               )}
@@ -671,7 +671,7 @@ export function SupportTicketsPage({ studio = false }) {
                 ) : (
                   <span className="text-[11px] text-muted italic">
                     {activeTicket?.created_by_super_admin && studio
-                      ? 'Issued by Super Admin — only status may be changed'
+                      ? 'Issued by Platform Provider — only status may be changed'
                       : ''}
                   </span>
                 )}

@@ -55,7 +55,20 @@ function resolveCredentials(provider, overrideCreds = null) {
 
   if (credRecord && credRecord.encrypted_config) {
     try {
-      return decryptStorageCredentials(credRecord.encrypted_config);
+      const c = decryptStorageCredentials(credRecord.encrypted_config);
+      return {
+        ...c,
+        host: c.host || c.endpoint || '',
+        endpoint: c.endpoint || c.host || '',
+        username: c.username || c.accessKey || c.accessKeyId || '',
+        accessKey: c.accessKey || c.accessKeyId || c.username || '',
+        accessKeyId: c.accessKeyId || c.accessKey || c.username || '',
+        password: c.password || c.secretKey || c.secretAccessKey || '',
+        secretKey: c.secretKey || c.secretAccessKey || c.password || '',
+        secretAccessKey: c.secretAccessKey || c.secretKey || c.password || '',
+        root: c.root || c.bucket || '/',
+        bucket: c.bucket || c.root || '',
+      };
     } catch (err) {
       console.error('[StorageAdapters] Credential decryption failed:', err.message);
       throw new Error('Invalid or corrupted storage credentials');
@@ -314,12 +327,14 @@ async function writeObject(provider, objectKey, dataBufferOrStream, mimeType = '
 // DELETE OBJECT
 // -------------------------------------------------------------
 async function deleteObject(provider, objectKey) {
+  if (!objectKey) return { success: false, reason: 'Empty object key' };
   const backend = provider.backend || 'local';
   const creds = resolveCredentials(provider);
 
   if (backend === 'local') {
     const root = getLocalRootPath();
-    const filePath = path.resolve(root, objectKey);
+    const sanitizedKey = objectKey.replace(/^[/\\]+/, '');
+    const filePath = path.resolve(root, sanitizedKey);
     const rel = path.relative(root, filePath);
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Path traversal detected');
     if (fs.existsSync(filePath)) {
@@ -332,7 +347,8 @@ async function deleteObject(provider, objectKey) {
     const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
     const s3 = getS3Client(creds);
     const bucket = creds.bucket;
-    const key = creds.prefix ? `${creds.prefix.replace(/\/$/, '')}/${objectKey}` : objectKey;
+    const cleanKey = objectKey.replace(/^\/+/, '');
+    const key = creds.prefix ? `${creds.prefix.replace(/\/$/, '')}/${cleanKey}` : cleanKey;
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     return { success: true };
   }
@@ -343,7 +359,7 @@ async function deleteObject(provider, objectKey) {
       try {
         await sftp.delete(remotePath);
       } catch (err) {
-        if (!err.message.includes('No such file')) throw err;
+        if (!err.message.includes('No such file') && !err.message.includes('not exist')) throw err;
       }
       return { success: true };
     });
@@ -361,6 +377,84 @@ async function deleteObject(provider, objectKey) {
 
   throw new Error(`Unsupported storage backend: ${backend}`);
 }
+
+// -------------------------------------------------------------
+// DELETE DIRECTORY (RECURSIVE)
+// -------------------------------------------------------------
+async function deleteDirectory(provider, dirPath) {
+  if (!dirPath) return { success: false, reason: 'Empty directory path' };
+  const backend = provider.backend || 'local';
+  const creds = resolveCredentials(provider);
+
+  if (backend === 'local') {
+    const root = getLocalRootPath();
+    const sanitizedDir = dirPath.replace(/^[/\\]+/, '');
+    const fullPath = path.resolve(root, sanitizedDir);
+    const rel = path.relative(root, fullPath);
+    if (!rel || rel === '.' || rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new Error('Path traversal or cannot delete root storage directory');
+    }
+    if (fs.existsSync(fullPath)) {
+      await fsPromises.rm(fullPath, { recursive: true, force: true });
+    }
+    return { success: true };
+  }
+
+  if (backend === 's3') {
+    const { ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+    const s3 = getS3Client(creds);
+    const bucket = creds.bucket;
+    const cleanPrefix = creds.prefix ? `${creds.prefix.replace(/\/$/, '')}/` : '';
+    const cleanDir = dirPath.replace(/^\/+/, '').replace(/\/+$/, '');
+    const prefix = `${cleanPrefix}${cleanDir}/`;
+
+    let continuationToken;
+    do {
+      const listRes = await s3.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }));
+      if (listRes.Contents && listRes.Contents.length > 0) {
+        const objectsToDelete = listRes.Contents.map((c) => ({ Key: c.Key }));
+        await s3.send(new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: { Objects: objectsToDelete },
+        }));
+      }
+      continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    return { success: true };
+  }
+
+  if (backend === 'sftp') {
+    return await withSFTP(creds, async (sftp) => {
+      const remotePath = path.posix.join(creds.root || '/', dirPath);
+      try {
+        await sftp.rmdir(remotePath, true);
+      } catch (err) {
+        if (!err.message.includes('No such file') && !err.message.includes('not exist')) {
+          throw err;
+        }
+      }
+      return { success: true };
+    });
+  }
+
+  if (backend === 'ftp') {
+    return await withFTP(creds, async (client) => {
+      const remotePath = path.posix.join(creds.root || '/', dirPath);
+      try {
+        await client.removeDir(remotePath);
+      } catch (_) {}
+      return { success: true };
+    });
+  }
+
+  throw new Error(`Unsupported storage backend: ${backend}`);
+}
+
 
 // -------------------------------------------------------------
 // TEST CONNECTION (REAL PROTOCOL PROBES)
@@ -575,6 +669,22 @@ async function getStorageUsage(provider) {
         const root = creds.root || '/';
         let totalBytes = 0;
         let fileCount = 0;
+        let diskTotalBytes = null;
+        let diskFreeBytes = null;
+
+        try {
+          if (typeof sftp.statvfs === 'function') {
+            const vfs = await sftp.statvfs(root);
+            if (vfs && vfs.f_blocks) {
+              const blockSize = Number(vfs.f_frsize || vfs.f_bsize || 4096);
+              diskTotalBytes = Number(BigInt(blockSize) * BigInt(vfs.f_blocks));
+              diskFreeBytes = Number(BigInt(blockSize) * BigInt(vfs.f_bavail ?? vfs.f_bfree ?? 0));
+            }
+          }
+        } catch (vfsErr) {
+          // Statvfs not supported or permission denied on SFTP server, continue with walk
+        }
+
         const walk = async (dir) => {
           let list;
           try { list = await sftp.list(dir); } catch { return; }
@@ -588,7 +698,12 @@ async function getStorageUsage(provider) {
           }
         };
         await walk(root);
-        return { used_bytes: totalBytes, free_bytes: null, total_bytes: null, file_count: fileCount };
+        return {
+          used_bytes: totalBytes,
+          free_bytes: diskFreeBytes,
+          total_bytes: diskTotalBytes,
+          file_count: fileCount,
+        };
       });
     }
 
@@ -615,8 +730,10 @@ module.exports = {
   readObject,
   writeObject,
   deleteObject,
+  deleteDirectory,
   testConnection,
   validateHostSecurity,
   resolveCredentials,
   getStorageUsage,
 };
+

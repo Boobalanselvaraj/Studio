@@ -12,6 +12,8 @@ router.use(requireSuperAdmin);
 // Fleet overview & Studio provisioning
 router.get('/studios', adminController.listStudios);
 router.post('/studios', adminController.createStudio);
+router.patch('/studios/:id', adminController.updateStudio);
+router.put('/studios/:id', adminController.updateStudio);
 router.patch('/studios/:id/billing-profile', adminController.updateStudioBilling);
 router.get('/studios/:id/allocations', adminController.getStudioAllocations);
 router.put('/studios/:id/allocations', adminController.updateStudioBilling);
@@ -24,6 +26,8 @@ router.post('/studios/:id/storage-connections', adminController.provisionPlatfor
 // Platform Storage Servers Fleet Management
 router.get('/storage-servers', adminController.listAllStorageServers);
 router.post('/storage-servers', adminController.createStorageServer);
+router.get('/storage-servers/:id/stats', adminController.getStorageServerStats);
+router.post('/storage-servers/:id/test', adminController.testStorageServer);
 router.put('/storage-servers/:id', adminController.updateStorageServer);
 router.delete('/storage-servers/:id', adminController.deleteStorageServer);
 

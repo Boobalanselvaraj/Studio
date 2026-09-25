@@ -2,10 +2,35 @@ const prisma = require('../config/prisma');
 
 function getNextBillingDate(from, cycle) {
   const d = new Date(from);
-  if (cycle === 'monthly') d.setMonth(d.getMonth() + 1);
-  else if (cycle === 'annually') d.setFullYear(d.getFullYear() + 1);
-  else if (cycle === 'quarterly') d.setMonth(d.getMonth() + 3);
-  else if (cycle === 'one_time') return d;
+  if (!cycle) {
+    d.setMonth(d.getMonth() + 1);
+    return d;
+  }
+  const c = String(cycle).toLowerCase();
+  if (c === 'weekly') {
+    d.setDate(d.getDate() + 7);
+  } else if (c === 'bi_weekly' || c === 'biweekly') {
+    d.setDate(d.getDate() + 14);
+  } else if (c === 'monthly') {
+    d.setMonth(d.getMonth() + 1);
+  } else if (c === 'quarterly') {
+    d.setMonth(d.getMonth() + 3);
+  } else if (c === 'half_yearly' || c === 'semi_annually') {
+    d.setMonth(d.getMonth() + 6);
+  } else if (c === 'yearly' || c === 'annually') {
+    d.setFullYear(d.getFullYear() + 1);
+  } else if (c.startsWith('custom_') || c.startsWith('days_')) {
+    const days = parseInt(c.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(days) && days > 0) {
+      d.setDate(d.getDate() + days);
+    } else {
+      d.setMonth(d.getMonth() + 1);
+    }
+  } else if (c === 'one_time') {
+    return d;
+  } else {
+    d.setMonth(d.getMonth() + 1);
+  }
   return d;
 }
 
@@ -26,7 +51,7 @@ async function createSubscription(req, res, next) {
   try {
     const studioId = req.params.id;
     const {
-      service_type = 'custom',
+      service_type = 'support',
       resource_id,
       label,
       description,
@@ -34,29 +59,32 @@ async function createSubscription(req, res, next) {
       currency = 'INR',
       billing_cycle = 'monthly',
       started_at = new Date(),
-      auto_generate_invoice = false,
+      next_billing_date,
+      auto_generate_invoice = true,
       notes,
     } = req.body;
 
     if (!label || !label.trim()) {
-      return res.status(400).json({ error: 'Subscription label is required' });
+      return res.status(400).json({ error: 'Subscription item / service name is required' });
     }
-    if (unit_price === undefined || unit_price === null) {
-      return res.status(400).json({ error: 'Unit price is required' });
+    if (unit_price === undefined || unit_price === null || isNaN(Number(unit_price)) || Number(unit_price) < 0) {
+      return res.status(400).json({ error: 'Valid recurring price is required' });
     }
 
     const start = new Date(started_at);
-    const nextDate = getNextBillingDate(start, billing_cycle);
+    const nextDate = next_billing_date && !isNaN(new Date(next_billing_date).getTime())
+      ? new Date(next_billing_date)
+      : getNextBillingDate(start, billing_cycle);
 
     const sub = await prisma.billing_subscriptions.create({
       data: {
         studio_id: studioId,
-        service_type,
+        service_type: service_type || 'support',
         resource_id: resource_id || null,
         label: label.trim(),
         description: description ? description.trim() : null,
         unit_price: Number(unit_price),
-        currency,
+        currency: currency || 'INR',
         billing_cycle,
         started_at: start,
         current_period_start: start,
@@ -78,6 +106,7 @@ async function updateSubscription(req, res, next) {
   try {
     const { id: studioId, subId } = req.params;
     const {
+      service_type,
       label,
       description,
       unit_price,
@@ -94,14 +123,17 @@ async function updateSubscription(req, res, next) {
     if (!existing) return res.status(404).json({ error: 'Subscription not found' });
 
     const data = {};
-    if (label !== undefined) data.label = label.trim();
-    if (description !== undefined) data.description = description;
-    if (unit_price !== undefined) data.unit_price = Number(unit_price);
+    if (service_type !== undefined) data.service_type = service_type;
+    if (label !== undefined && label.trim()) data.label = label.trim();
+    if (description !== undefined) data.description = description ? description.trim() : null;
+    if (unit_price !== undefined && !isNaN(Number(unit_price))) data.unit_price = Number(unit_price);
     if (billing_cycle !== undefined) data.billing_cycle = billing_cycle;
     if (status !== undefined) data.status = status;
     if (auto_generate_invoice !== undefined) data.auto_generate_invoice = Boolean(auto_generate_invoice);
-    if (notes !== undefined) data.notes = notes;
-    if (next_billing_date !== undefined) data.next_billing_date = new Date(next_billing_date);
+    if (notes !== undefined) data.notes = notes ? notes.trim() : null;
+    if (next_billing_date !== undefined && !isNaN(new Date(next_billing_date).getTime())) {
+      data.next_billing_date = new Date(next_billing_date);
+    }
 
     const updated = await prisma.billing_subscriptions.update({
       where: { id: subId },
@@ -145,9 +177,13 @@ async function triggerSubscriptionInvoice(req, res, next) {
     const periodEnd = getNextBillingDate(periodStart, sub.billing_cycle);
 
     const categoryMap = {
+      support: 'Support & Maintenance',
+      storage: 'Cloud Storage & Hosting',
       platform_license: 'Software License',
-      dedicated_server: 'Dedicated Server',
+      maintenance: 'Periodic System Maintenance',
+      hardware: 'Hardware & Equipment',
       camera_pack: 'Camera Add-on Pack',
+      dedicated_server: 'Dedicated Server',
       custom: 'Custom Subscription',
     };
 

@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Clock,
   Zap,
+  Building2,
 } from 'lucide-react';
 import { PageHeading } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
@@ -93,21 +94,33 @@ export function BillingPage() {
     }
   };
 
+  const formatBytes = (bytes) => {
+    if (!bytes || isNaN(bytes) || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(Number(bytes)) / Math.log(k));
+    return `${(Number(bytes) / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  const platformServer = providers.find((p) => p.provider_type === 'platform');
+  const primaryServer = platformServer || providers.find((p) => p.is_default) || providers[0];
+  const isPlatformManaged = primaryServer?.provider_type === 'platform';
+
   // Find latest active or issued invoice to display current subscription bill
   const latestInvoice = invoices.length > 0 ? invoices[0] : null;
   const lineItems = latestInvoice?.line_items && Array.isArray(latestInvoice.line_items) && latestInvoice.line_items.length > 0
     ? latestInvoice.line_items
     : [
         { description: 'StudioFlow Platform Core SaaS License', category: 'Software', quantity: 1, unit_price: 1500, amount: 1500 },
-        { description: 'Assigned Dedicated Storage Server (VPS Instance)', category: 'Dedicated Server', quantity: 1, unit_price: 2000, amount: 2000 },
+        isPlatformManaged
+          ? { description: `Platform-Assigned Storage Server ${primaryServer?.capacity_gb || 500}GB (VPS Cluster)`, category: 'Dedicated Server', quantity: 1, unit_price: 2000, amount: 2000 }
+          : { description: 'Studio-Owned Storage Integration (BYO Server Connector)', category: 'Storage Integration', quantity: 1, unit_price: 0, amount: 0 },
         { description: `Camera Wi-Fi Transmission License Pack (${usage?.cameras?.limit ?? 5} cameras)`, category: 'Hardware/Camera', quantity: 1, unit_price: 500, amount: 500 },
       ];
 
   const totalMonthlyAmount = latestInvoice?.total_amount
     ? Number(latestInvoice.total_amount)
     : lineItems.reduce((acc, item) => acc + (Number(item.amount) || 0), 0);
-
-  const assignedServer = providers.find((p) => p.provider_type === 'platform') || providers.find((p) => p.is_default) || providers[0];
 
   return (
     <div className="page-enter space-y-6">
@@ -207,71 +220,156 @@ export function BillingPage() {
               </div>
             </section>
 
-            {/* Assigned Dedicated Storage Server Card (1 Col) */}
+            {/* Storage Server Status & Ingest Allocation Card (1 Col) */}
             <section className="panel p-6 space-y-4 flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Server className="w-5 h-5 text-blue-500" />
-                  <h3 className="text-base font-bold text-foreground">Assigned Storage Server</h3>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2">
+                    <Server className="w-5 h-5 text-blue-500" />
+                    <h3 className="text-base font-bold text-foreground">
+                      {isPlatformManaged ? 'Assigned Platform Storage' : primaryServer ? 'Primary Storage Connection' : 'Storage Allocation'}
+                    </h3>
+                  </div>
+                  {primaryServer && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                        isPlatformManaged
+                          ? 'bg-purple-500/10 text-purple-600 border-purple-500/25'
+                          : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25'
+                      }`}
+                    >
+                      {isPlatformManaged ? (
+                        <>
+                          <ShieldCheck size={11} /> Platform-Assigned
+                        </>
+                      ) : (
+                        <>
+                          <Building2 size={11} /> Studio-Owned (BYO)
+                        </>
+                      )}
+                    </span>
+                  )}
                 </div>
+
                 <p className="text-xs text-muted mb-4">
-                  External storage server assigned to your studio by platform administration.
+                  {isPlatformManaged
+                    ? 'Dedicated cloud storage server provisioned and managed by the platform provider.'
+                    : primaryServer
+                    ? 'Self-hosted external storage connected directly by your studio.'
+                    : 'No external storage server is currently connected to this studio workspace.'}
                 </p>
 
-                {assignedServer ? (
+                {primaryServer ? (
                   <div className="space-y-3 p-4 rounded-xl bg-surface-2/60 border border-border text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-muted">Server Name:</span>
-                      <strong className="text-foreground font-semibold">{assignedServer.name}</strong>
+                      <strong className="text-foreground font-semibold flex items-center gap-1.5">
+                        <span>{primaryServer.name}</span>
+                        {primaryServer.is_default && (
+                          <span className="text-[9px] px-1 py-0.2 rounded font-semibold bg-brand-primary/10 text-brand-primary">
+                            PRIMARY
+                          </span>
+                        )}
+                      </strong>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-muted">Protocol:</span>
                       <Badge variant="secondary" className="uppercase font-mono text-[10px]">
-                        {assignedServer.backend}
+                        {primaryServer.backend}
                       </Badge>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-muted">Server Health:</span>
                       <span className="flex items-center gap-1 font-semibold text-emerald-500">
-                        <CheckCircle2 size={13} /> {assignedServer.health === 'healthy' ? 'Online & Verified' : assignedServer.health}
+                        <CheckCircle2 size={13} /> {primaryServer.health === 'healthy' ? 'Online & Verified' : (primaryServer.health || 'Online')}
                       </span>
                     </div>
 
+                    {(primaryServer.capacity_gb || primaryServer.platform_capacity_gb) && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted">Total Capacity:</span>
+                        <strong className="font-mono text-foreground">
+                          {Number(primaryServer.capacity_gb || primaryServer.platform_capacity_gb).toLocaleString()} GB
+                        </strong>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between">
                       <span className="text-muted">Billing Model:</span>
-                      <span className="text-foreground font-medium">Included in Monthly Bill</span>
+                      <span className={`font-semibold ${isPlatformManaged ? 'text-purple-600 dark:text-purple-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        {isPlatformManaged ? 'Included in Monthly Bill' : 'Direct / Self-Hosted (₹0 Platform Fee)'}
+                      </span>
                     </div>
 
-                    {assignedServer.tested_at && (
+                    {/* Storage Quota & Live Usage Progress */}
+                    {(() => {
+                      const capGb = Number(primaryServer.capacity_gb || primaryServer.platform_capacity_gb || 0);
+                      const capBytes = capGb > 0 ? capGb * 1024 * 1024 * 1024 : 0;
+                      const storedBytes = Number(usage?.usedBytes || usage?.platform?.usedBytes || usage?.studioOwned?.usedBytes || 0);
+                      const pct = capBytes > 0 ? Math.min(100, Math.round((storedBytes / capBytes) * 100)) : null;
+
+                      if (!capBytes && !storedBytes) return null;
+
+                      return (
+                        <div className="pt-2 border-t border-border/50 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-muted">Storage Used:</span>
+                            <span className="font-mono font-medium text-foreground">
+                              {formatBytes(storedBytes)}{capBytes > 0 ? ` / ${formatBytes(capBytes)}` : ''}
+                            </span>
+                          </div>
+                          {pct !== null && (
+                            <div className="w-full bg-surface-3 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  pct > 90 ? 'bg-red-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${Math.max(pct, 2)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {primaryServer.tested_at && (
                       <div className="flex items-center justify-between text-[11px] text-muted pt-1 border-t border-border/50">
-                        <span>Last Probed:</span>
-                        <span>{new Date(assignedServer.tested_at).toLocaleDateString()}</span>
+                        <span>Last Verified:</span>
+                        <span>{new Date(primaryServer.tested_at).toLocaleDateString()}</span>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
-                    <p className="font-semibold mb-1">No Dedicated Server Assigned</p>
+                    <p className="font-semibold mb-1">No Storage Server Connected</p>
                     <p className="text-[11px]">
-                      Connect your external server in Storage settings to begin uploading.
+                      Connect an external storage node (SFTP, S3, MinIO) in Storage settings to route incoming camera photos.
                     </p>
                   </div>
                 )}
               </div>
 
               <div className="space-y-2 pt-2">
-                <div className="p-3 bg-blue-500/5 rounded-xl border border-blue-500/20 text-xs text-muted">
-                  <span className="text-blue-500 font-semibold block mb-0.5">Camera Sync & Ingest:</span>
-                  Cameras upload directly to your storage server via Wi-Fi transmission or SFTP without local mount limits.
+                <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                  isPlatformManaged
+                    ? 'bg-purple-500/5 border-purple-500/20 text-muted'
+                    : 'bg-emerald-500/5 border-emerald-500/20 text-muted'
+                }`}>
+                  <span className={`font-semibold block mb-0.5 ${isPlatformManaged ? 'text-purple-600 dark:text-purple-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {isPlatformManaged ? 'Platform-Managed Cluster:' : 'Studio-Owned Infrastructure:'}
+                  </span>
+                  {isPlatformManaged
+                    ? 'High-speed cloud storage managed by the platform provider with automatic health verification.'
+                    : 'Photos and high-res RAWs sync directly to your private server without platform storage surcharges.'}
                 </div>
 
                 <Link
                   className="button-outline w-full flex items-center justify-center gap-1.5 text-xs py-2"
                   to="/studio/storage"
                 >
-                  <HardDrive size={14} /> View All Storage Connections <ArrowUpRight size={14} />
+                  <HardDrive size={14} /> View All Storage Connections ({providers.length}) <ArrowUpRight size={14} />
                 </Link>
               </div>
             </section>

@@ -70,12 +70,25 @@ export function StorageServersPage() {
   const [name, setName] = useState('');
   const [backend, setBackend] = useState('s3');
   const [targetStudioId, setTargetStudioId] = useState('');
+  const [totalCapacityGb, setTotalCapacityGb] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+
+  // S3 / Wasabi / MinIO fields
   const [endpoint, setEndpoint] = useState('');
   const [bucket, setBucket] = useState('');
   const [region, setRegion] = useState('us-east-1');
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
+
+  // SFTP / FTP fields
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('22');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [root, setRoot] = useState('/');
+  const [privateKey, setPrivateKey] = useState('');
+  const [passphrase, setPassphrase] = useState('');
+  const [secure, setSecure] = useState(false);
 
   // Platform Cost & Renewal tracking state (Only for platform-bought servers)
   const [platformMonthlyCost, setPlatformMonthlyCost] = useState('');
@@ -89,18 +102,37 @@ export function StorageServersPage() {
   const [editName, setEditName] = useState('');
   const [editBackend, setEditBackend] = useState('s3');
   const [editStudioId, setEditStudioId] = useState('');
+  const [editTotalCapacityGb, setEditTotalCapacityGb] = useState('');
+  const [editEnabled, setEditEnabled] = useState(true);
+
+  // Edit S3 fields
   const [editEndpoint, setEditEndpoint] = useState('');
   const [editBucket, setEditBucket] = useState('');
   const [editRegion, setEditRegion] = useState('us-east-1');
   const [editAccessKey, setEditAccessKey] = useState('');
   const [editSecretKey, setEditSecretKey] = useState('');
-  const [editEnabled, setEditEnabled] = useState(true);
 
+  // Edit SFTP / FTP fields
+  const [editHost, setEditHost] = useState('');
+  const [editPort, setEditPort] = useState('22');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editRoot, setEditRoot] = useState('/');
+  const [editPrivateKey, setEditPrivateKey] = useState('');
+  const [editPassphrase, setEditPassphrase] = useState('');
+  const [editSecure, setEditSecure] = useState(false);
+
+  // Edit Platform Cost & Accounting
   const [editPlatformMonthlyCost, setEditPlatformMonthlyCost] = useState('');
   const [editPlatformRenewalPeriod, setEditPlatformRenewalPeriod] = useState('monthly');
   const [editPlatformRenewalDate, setEditPlatformRenewalDate] = useState('');
   const [editPlatformCapacityGb, setEditPlatformCapacityGb] = useState('');
   const [editPlatformNotes, setEditPlatformNotes] = useState('');
+
+  // Live storage usage & health checking
+  const [checkingStats, setCheckingStats] = useState({});
+  const [serverStats, setServerStats] = useState({});
+  const [testingId, setTestingId] = useState(null);
 
   const loadData = async () => {
     try {
@@ -139,6 +171,45 @@ export function StorageServersPage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const formatBytes = (b) => {
+    if (b == null) return '—';
+    if (b === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(b) / Math.log(k));
+    return (b / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+  };
+
+  const formatGb = (gb) => {
+    if (!gb) return '0 GB';
+    if (gb >= 1000) return (gb / 1000).toFixed(1) + ' TB';
+    return gb + ' GB';
+  };
+
+  const resetCreateForm = () => {
+    setName('');
+    setBackend('s3');
+    setEndpoint('');
+    setBucket('');
+    setRegion('us-east-1');
+    setAccessKey('');
+    setSecretKey('');
+    setHost('');
+    setPort('22');
+    setUsername('');
+    setPassword('');
+    setRoot('/');
+    setPrivateKey('');
+    setPassphrase('');
+    setSecure(false);
+    setTotalCapacityGb('');
+    setPlatformMonthlyCost('');
+    setPlatformRenewalDate('');
+    setPlatformCapacityGb('');
+    setPlatformNotes('');
+    setProviderType('platform');
+  };
+
   const handleCreateServer = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -152,15 +223,56 @@ export function StorageServersPage() {
 
     try {
       setBusy(true);
-      const credentials = {
-        endpoint: endpoint.trim() || undefined,
-        bucket: bucket.trim() || undefined,
-        region: region.trim() || undefined,
-        accessKey: accessKey.trim() || undefined,
-        secretKey: secretKey.trim() || undefined,
-      };
+      const isSftp = backend === 'sftp';
+      const isFtp = backend === 'ftp';
+
+      let credentials = {};
+      if (isSftp) {
+        credentials = {
+          host: host.trim() || undefined,
+          endpoint: host.trim() || undefined,
+          port: Number(port) || 22,
+          username: username.trim() || undefined,
+          accessKey: username.trim() || undefined,
+          password: password || undefined,
+          secretKey: password || undefined,
+          root: root.trim() || '/',
+          bucket: root.trim() || '/',
+          privateKey: privateKey.trim() || undefined,
+          passphrase: passphrase || undefined,
+        };
+      } else if (isFtp) {
+        credentials = {
+          host: host.trim() || undefined,
+          endpoint: host.trim() || undefined,
+          port: Number(port) || 21,
+          username: username.trim() || undefined,
+          accessKey: username.trim() || undefined,
+          password: password || undefined,
+          secretKey: password || undefined,
+          root: root.trim() || '/',
+          bucket: root.trim() || '/',
+          secure: !!secure,
+        };
+      } else {
+        credentials = {
+          endpoint: endpoint.trim() || undefined,
+          host: endpoint.trim() || undefined,
+          bucket: bucket.trim() || undefined,
+          root: bucket.trim() || undefined,
+          region: region.trim() || 'us-east-1',
+          accessKey: accessKey.trim() || undefined,
+          accessKeyId: accessKey.trim() || undefined,
+          username: accessKey.trim() || undefined,
+          secretKey: secretKey.trim() || undefined,
+          secretAccessKey: secretKey.trim() || undefined,
+          password: secretKey.trim() || undefined,
+          forcePathStyle: backend === 'minio' ? true : undefined,
+        };
+      }
 
       const isPlatformManaged = providerType === 'platform';
+      const capVal = totalCapacityGb ? Number(totalCapacityGb) : undefined;
 
       await adminApi.createStorageServer({
         studio_id: targetStudioId,
@@ -172,26 +284,18 @@ export function StorageServersPage() {
         platform_monthly_cost: isPlatformManaged && platformMonthlyCost ? Number(platformMonthlyCost) : undefined,
         platform_renewal_period: isPlatformManaged ? platformRenewalPeriod : undefined,
         platform_renewal_date: isPlatformManaged && platformRenewalDate ? new Date(platformRenewalDate).toISOString() : undefined,
-        platform_capacity_gb: isPlatformManaged && platformCapacityGb ? Number(platformCapacityGb) : undefined,
+        platform_capacity_gb: capVal,
+        capacity_gb: capVal,
         platform_notes: isPlatformManaged ? platformNotes.trim() || undefined : undefined,
       });
 
       toast.success(
         isPlatformManaged
           ? `Platform Server "${name}" created with credentials and assigned successfully!`
-          : `Studio-Owned Server "${name}" registered with basic connection details!`
+          : `Studio-Owned Server "${name}" registered successfully!`
       );
       setCreateModal(false);
-      setName('');
-      setEndpoint('');
-      setBucket('');
-      setAccessKey('');
-      setSecretKey('');
-      setPlatformMonthlyCost('');
-      setPlatformRenewalDate('');
-      setPlatformCapacityGb('');
-      setPlatformNotes('');
-      setProviderType('platform');
+      resetCreateForm();
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create storage server');
@@ -208,15 +312,33 @@ export function StorageServersPage() {
     setEditBackend(srv.backend || 's3');
     setEditStudioId(srv.studio_id || '');
     setEditEnabled(srv.is_enabled !== false);
-    setEditEndpoint(srv.credentials?.endpoint || '');
-    setEditBucket(srv.credentials?.bucket || '');
-    setEditRegion(srv.credentials?.region || 'us-east-1');
-    setEditAccessKey(srv.credentials?.accessKey || '');
+
+    const creds = srv.credentials || {};
+    const isFtp = srv.backend === 'ftp';
+
+    // SFTP / FTP fields
+    setEditHost(creds.host || creds.endpoint || '');
+    setEditPort(creds.port ? String(creds.port) : (isFtp ? '21' : '22'));
+    setEditUsername(creds.username || creds.accessKey || '');
+    setEditPassword('');
+    setEditRoot(creds.root || creds.bucket || '/');
+    setEditPrivateKey(creds.privateKey || '');
+    setEditPassphrase(creds.passphrase || '');
+    setEditSecure(!!creds.secure);
+
+    // S3 fields
+    setEditEndpoint(creds.endpoint || creds.host || '');
+    setEditBucket(creds.bucket || creds.root || '');
+    setEditRegion(creds.region || 'us-east-1');
+    setEditAccessKey(creds.accessKey || creds.accessKeyId || creds.username || '');
     setEditSecretKey('');
+
+    // Capacity & Accounting
+    const cap = srv.capacity_gb ?? srv.platform_capacity_gb ?? '';
+    setEditTotalCapacityGb(cap !== '' && cap != null ? String(cap) : '');
     setEditPlatformMonthlyCost(srv.platform_monthly_cost ?? '');
     setEditPlatformRenewalPeriod(srv.platform_renewal_period || 'monthly');
     setEditPlatformRenewalDate(srv.platform_renewal_date ? new Date(srv.platform_renewal_date).toISOString().slice(0, 10) : '');
-    setEditPlatformCapacityGb(srv.platform_capacity_gb ?? '');
     setEditPlatformNotes(srv.platform_notes || '');
     setEditModal(true);
   };
@@ -227,14 +349,36 @@ export function StorageServersPage() {
 
     try {
       setBusy(true);
+      const isSftp = editBackend === 'sftp';
+      const isFtp = editBackend === 'ftp';
+
       const credentials = {};
-      if (editEndpoint.trim()) credentials.endpoint = editEndpoint.trim();
-      if (editBucket.trim()) credentials.bucket = editBucket.trim();
-      if (editRegion.trim()) credentials.region = editRegion.trim();
-      if (editAccessKey.trim()) credentials.accessKey = editAccessKey.trim();
-      if (editSecretKey.trim()) credentials.secretKey = editSecretKey.trim();
+      if (isSftp) {
+        if (editHost.trim()) { credentials.host = editHost.trim(); credentials.endpoint = editHost.trim(); }
+        if (editPort) credentials.port = Number(editPort) || 22;
+        if (editUsername.trim()) { credentials.username = editUsername.trim(); credentials.accessKey = editUsername.trim(); }
+        if (editPassword) { credentials.password = editPassword; credentials.secretKey = editPassword; }
+        if (editRoot.trim()) { credentials.root = editRoot.trim(); credentials.bucket = editRoot.trim(); }
+        if (editPrivateKey.trim()) credentials.privateKey = editPrivateKey.trim();
+        if (editPassphrase) credentials.passphrase = editPassphrase;
+      } else if (isFtp) {
+        if (editHost.trim()) { credentials.host = editHost.trim(); credentials.endpoint = editHost.trim(); }
+        if (editPort) credentials.port = Number(editPort) || 21;
+        if (editUsername.trim()) { credentials.username = editUsername.trim(); credentials.accessKey = editUsername.trim(); }
+        if (editPassword) { credentials.password = editPassword; credentials.secretKey = editPassword; }
+        if (editRoot.trim()) { credentials.root = editRoot.trim(); credentials.bucket = editRoot.trim(); }
+        credentials.secure = !!editSecure;
+      } else {
+        if (editEndpoint.trim()) { credentials.endpoint = editEndpoint.trim(); credentials.host = editEndpoint.trim(); }
+        if (editBucket.trim()) { credentials.bucket = editBucket.trim(); credentials.root = editBucket.trim(); }
+        if (editRegion.trim()) credentials.region = editRegion.trim();
+        if (editAccessKey.trim()) { credentials.accessKey = editAccessKey.trim(); credentials.accessKeyId = editAccessKey.trim(); credentials.username = editAccessKey.trim(); }
+        if (editSecretKey.trim()) { credentials.secretKey = editSecretKey.trim(); credentials.secretAccessKey = editSecretKey.trim(); credentials.password = editSecretKey.trim(); }
+        if (editBackend === 'minio') credentials.forcePathStyle = true;
+      }
 
       const isPlatformManaged = editProviderType === 'platform';
+      const capVal = editTotalCapacityGb !== '' ? Number(editTotalCapacityGb) : null;
 
       await adminApi.updateStorageServer(selectedServer.id, {
         name: editName.trim(),
@@ -243,10 +387,11 @@ export function StorageServersPage() {
         provider_type: isPlatformManaged ? 'platform' : 'studio_owned',
         is_enabled: editEnabled,
         credentials: Object.keys(credentials).length > 0 ? credentials : undefined,
+        platform_capacity_gb: capVal,
+        capacity_gb: capVal,
         platform_monthly_cost: isPlatformManaged && editPlatformMonthlyCost !== '' ? Number(editPlatformMonthlyCost) : null,
         platform_renewal_period: isPlatformManaged ? editPlatformRenewalPeriod || 'monthly' : null,
         platform_renewal_date: isPlatformManaged && editPlatformRenewalDate ? new Date(editPlatformRenewalDate).toISOString() : null,
-        platform_capacity_gb: isPlatformManaged && editPlatformCapacityGb !== '' ? Number(editPlatformCapacityGb) : null,
         platform_notes: isPlatformManaged ? editPlatformNotes.trim() || null : null,
       });
 
@@ -269,11 +414,45 @@ export function StorageServersPage() {
 
   const handleTestConnection = async (srv) => {
     try {
-      await adminApi.updateStorageServer(srv.id, { health: 'ok' });
-      toast.success(`Server "${srv.name}" responded OK. Health status confirmed.`);
+      setTestingId(srv.id);
+      const res = await adminApi.testStorageServer(srv.id);
+      if (res.success) {
+        toast.success(res.message || `Server "${srv.name}" responded OK. Health confirmed!`);
+      } else {
+        toast.error(res.error || `Server "${srv.name}" connection test failed`);
+      }
       loadData();
     } catch (err) {
-      toast.error('Failed to verify connection to external server');
+      toast.error(err.response?.data?.error || 'Failed to verify external server');
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  const handleCheckUsage = async (srvId) => {
+    try {
+      setCheckingStats((prev) => ({ ...prev, [srvId]: true }));
+      const stats = await adminApi.getStorageServerStats(srvId);
+      setServerStats((prev) => ({ ...prev, [srvId]: stats }));
+      toast.success('Storage statistics updated!');
+      setServers((prev) =>
+        prev.map((s) =>
+          s.id === srvId
+            ? {
+                ...s,
+                used_bytes: stats.used_bytes,
+                total_bytes: stats.total_bytes,
+                free_bytes: stats.free_bytes,
+                capacity_gb: stats.capacity_gb,
+                platform_capacity_gb: stats.capacity_gb,
+              }
+            : s
+        )
+      );
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to fetch storage usage');
+    } finally {
+      setCheckingStats((prev) => ({ ...prev, [srvId]: false }));
     }
   };
 
@@ -305,6 +484,23 @@ export function StorageServersPage() {
   const assignedCount = servers.filter((s) => s.studio_id).length;
   const healthyCount = servers.filter((s) => s.health === 'ok' || s.is_enabled).length;
 
+  const totalAllocatedGb = useMemo(() => {
+    return servers.reduce((acc, s) => acc + (Number(s.platform_capacity_gb || s.capacity_gb) || 0), 0);
+  }, [servers]);
+
+  const totalUsedBytes = useMemo(() => {
+    return servers.reduce((acc, s) => {
+      const live = serverStats[s.id];
+      return acc + (Number(live?.used_bytes ?? s.used_bytes) || 0);
+    }, 0);
+  }, [servers, serverStats]);
+
+  const totalAvailableBytes = useMemo(() => {
+    if (totalAllocatedGb === 0) return null;
+    const totalAllocBytes = totalAllocatedGb * 1024 * 1024 * 1024;
+    return totalAllocBytes > totalUsedBytes ? totalAllocBytes - totalUsedBytes : 0;
+  }, [totalAllocatedGb, totalUsedBytes]);
+
   // Filtered servers
   const filteredServers = useMemo(() => {
     return servers.filter((srv) => {
@@ -334,7 +530,7 @@ export function StorageServersPage() {
             External Storage Servers Fleet
           </h1>
           <p className="text-sm text-muted">
-            Manage external storage nodes (Wasabi, MinIO, AWS S3, SFTP), credentials, and studio allocations.
+            Manage external storage nodes (Wasabi, MinIO, AWS S3, SFTP, FTP), credentials, and studio allocations.
           </p>
         </div>
 
@@ -353,7 +549,7 @@ export function StorageServersPage() {
           <Button
             size="sm"
             onClick={() => {
-              setProviderType('platform');
+              resetCreateForm();
               setCreateModal(true);
             }}
             className="flex items-center gap-1.5 text-xs bg-brand-primary text-white"
@@ -375,33 +571,41 @@ export function StorageServersPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{totalServers}</div>
-            <p className="text-[11px] text-muted mt-0.5">Across MinIO, Wasabi, S3 & SFTP</p>
+            <p className="text-[11px] text-muted mt-0.5">
+              {platformServersCount} Platform · {studioOwnedCount} Studio-Owned
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-border bg-surface-1 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted flex items-center justify-between">
-              Platform-Assigned
-              <KeyRound size={16} className="text-purple-500" />
+              Allocated Storage
+              <HardDrive size={16} className="text-purple-500" />
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{platformServersCount}</div>
-            <p className="text-[11px] text-muted mt-0.5">Bought by us · Credentials managed</p>
+            <div className="text-2xl font-bold text-purple-600">
+              {formatGb(totalAllocatedGb)}
+            </div>
+            <p className="text-[11px] text-muted mt-0.5">Configured total fleet storage</p>
           </CardContent>
         </Card>
 
         <Card className="border-border bg-surface-1 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted flex items-center justify-between">
-              Studio-Owned (BYO)
-              <Building2 size={16} className="text-emerald-500" />
+              Used Fleet Storage
+              <Database size={16} className="text-emerald-500" />
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-emerald-600">{studioOwnedCount}</div>
-            <p className="text-[11px] text-muted mt-0.5">Bought by studio · Basic details</p>
+            <div className="text-2xl font-bold text-emerald-600">
+              {formatBytes(totalUsedBytes)}
+            </div>
+            <p className="text-[11px] text-muted mt-0.5">
+              {totalAvailableBytes != null ? `${formatBytes(totalAvailableBytes)} available` : 'Active media & assets'}
+            </p>
           </CardContent>
         </Card>
 
@@ -492,6 +696,7 @@ export function StorageServersPage() {
                 <TableHead className="font-semibold text-xs text-muted">Provider / Backend</TableHead>
                 <TableHead className="font-semibold text-xs text-muted">Assigned Studio</TableHead>
                 <TableHead className="font-semibold text-xs text-muted">Server Details & Credentials</TableHead>
+                <TableHead className="font-semibold text-xs text-muted">Storage Usage & Quota</TableHead>
                 <TableHead className="font-semibold text-xs text-muted">Platform Cost / Renewal</TableHead>
                 <TableHead className="font-semibold text-xs text-muted">Stored Media</TableHead>
                 <TableHead className="font-semibold text-xs text-right">Actions</TableHead>
@@ -500,14 +705,14 @@ export function StorageServersPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted text-xs">
+                  <TableCell colSpan={9} className="text-center py-12 text-muted text-xs">
                     <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-brand-primary" />
                     Loading storage servers fleet…
                   </TableCell>
                 </TableRow>
               ) : filteredServers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted text-xs">
+                  <TableCell colSpan={9} className="text-center py-12 text-muted text-xs">
                     <Server size={28} className="mx-auto mb-2 opacity-40" />
                     <p className="font-medium text-foreground">No storage servers found</p>
                     <p className="text-[11px] mt-0.5">Click "Add Storage Server" to register a new platform or studio server.</p>
@@ -516,6 +721,9 @@ export function StorageServersPage() {
               ) : (
                 filteredServers.map((srv) => {
                   const isPlatformManaged = srv.provider_type === 'platform' || srv.is_platform_managed;
+                  const isSftpOrFtp = srv.backend === 'sftp' || srv.backend === 'ftp';
+                  const hostVal = srv.credentials?.host || srv.credentials?.endpoint;
+                  const pathVal = srv.credentials?.root || srv.credentials?.bucket;
 
                   return (
                     <TableRow key={srv.id} className="border-border hover:bg-surface-2/60 transition-colors">
@@ -597,15 +805,15 @@ export function StorageServersPage() {
                                 <KeyRound size={11} />
                                 View Credentials
                               </Button>
-                              {srv.credentials?.bucket && (
-                                <span className="text-[10px] font-mono text-muted bg-surface-2 px-1.5 py-0.5 rounded border border-border truncate max-w-[120px]" title={srv.credentials.bucket}>
-                                  {srv.credentials.bucket}
+                              {pathVal && (
+                                <span className="text-[10px] font-mono text-muted bg-surface-2 px-1.5 py-0.5 rounded border border-border truncate max-w-[120px]" title={pathVal}>
+                                  {pathVal}
                                 </span>
                               )}
                             </div>
-                            {srv.credentials?.endpoint && (
-                              <div className="text-[10px] font-mono text-muted truncate max-w-[190px]" title={srv.credentials.endpoint}>
-                                🌐 {srv.credentials.endpoint}
+                            {hostVal && (
+                              <div className="text-[10px] font-mono text-muted truncate max-w-[190px]" title={hostVal}>
+                                🌐 {hostVal}{srv.credentials?.port ? `:${srv.credentials.port}` : ''}
                               </div>
                             )}
                           </div>
@@ -613,22 +821,74 @@ export function StorageServersPage() {
                           // Studio-Owned: Show basic details only (no credentials exposed)
                           <div className="space-y-0.5 text-muted">
                             <div className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                              <span>Basic Reference Only</span>
+                              <span>Basic Reference</span>
                             </div>
-                            {srv.credentials?.endpoint ? (
-                              <div className="text-[10px] font-mono truncate max-w-[180px]" title={srv.credentials.endpoint}>
-                                Endpoint: {srv.credentials.endpoint}
+                            {hostVal ? (
+                              <div className="text-[10px] font-mono truncate max-w-[180px]" title={hostVal}>
+                                {isSftpOrFtp ? 'Host: ' : 'Endpoint: '}{hostVal}{srv.credentials?.port ? `:${srv.credentials.port}` : ''}
                               </div>
                             ) : (
-                              <div className="text-[10px] italic">Endpoint: Studio configured</div>
+                              <div className="text-[10px] italic">Host: Studio configured</div>
                             )}
-                            {srv.credentials?.bucket && (
-                              <div className="text-[10px] font-mono truncate max-w-[180px]" title={srv.credentials.bucket}>
-                                Bucket: {srv.credentials.bucket}
+                            {pathVal && (
+                              <div className="text-[10px] font-mono truncate max-w-[180px]" title={pathVal}>
+                                {isSftpOrFtp ? 'Path: ' : 'Bucket: '}{pathVal}
                               </div>
                             )}
                           </div>
                         )}
+                      </TableCell>
+
+                      {/* Storage Usage & Quota Column */}
+                      <TableCell className="text-xs">
+                        {(() => {
+                          const totalBytes = srv.total_bytes || (srv.capacity_gb ? srv.capacity_gb * 1024 * 1024 * 1024 : (srv.platform_capacity_gb ? srv.platform_capacity_gb * 1024 * 1024 * 1024 : 0));
+                          const usedBytes = srv.used_bytes || 0;
+                          const freeBytes = srv.free_bytes != null ? srv.free_bytes : (totalBytes > usedBytes ? totalBytes - usedBytes : null);
+                          const pct = totalBytes > 0 ? Math.min(100, Math.round((usedBytes / totalBytes) * 100)) : 0;
+                          const isChecking = checkingStats[srv.id];
+
+                          return (
+                            <div className="space-y-1.5 min-w-[145px] max-w-[190px]">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-foreground">
+                                  {formatBytes(usedBytes)}
+                                </span>
+                                <span className="text-muted text-[10px]">
+                                  {totalBytes > 0 ? `/ ${formatBytes(totalBytes)}` : '(Uncapped)'}
+                                </span>
+                              </div>
+
+                              {totalBytes > 0 && (
+                                <div className="w-full bg-surface-2 rounded-full h-1.5 overflow-hidden border border-border">
+                                  <div
+                                    className={`h-full transition-all duration-300 rounded-full ${
+                                      pct > 90 ? 'bg-red-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                                    }`}
+                                    style={{ width: `${Math.max(pct, 2)}%` }}
+                                  />
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between text-[10px] text-muted">
+                                <span>
+                                  {totalBytes > 0
+                                    ? `${pct}% used${freeBytes != null ? ` (${formatBytes(freeBytes)} free)` : ''}`
+                                    : `${formatBytes(usedBytes)} stored`}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCheckUsage(srv.id)}
+                                  disabled={isChecking}
+                                  className="hover:text-brand-primary p-0.5 rounded transition-colors text-muted hover:text-foreground"
+                                  title="Probe live storage stats"
+                                >
+                                  <RefreshCw size={11} className={isChecking ? 'animate-spin text-brand-primary' : ''} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
 
                       {/* Platform Cost & Renewal Column */}
@@ -665,9 +925,9 @@ export function StorageServersPage() {
                                   })()}
                                 </div>
                               )}
-                              {srv.platform_capacity_gb && (
+                              {(srv.capacity_gb || srv.platform_capacity_gb) && (
                                 <div className="text-[10px] text-muted">
-                                  Capacity: {srv.platform_capacity_gb} GB
+                                  Capacity: {srv.capacity_gb || srv.platform_capacity_gb} GB
                                 </div>
                               )}
                             </div>
@@ -678,6 +938,11 @@ export function StorageServersPage() {
                           <div className="space-y-0.5">
                             <span className="text-[11px] text-muted font-medium">Studio-Paid</span>
                             <div className="text-[10px] text-muted italic">No platform billing</div>
+                            {(srv.capacity_gb || srv.platform_capacity_gb) && (
+                              <div className="text-[10px] text-muted">
+                                Capacity: {srv.capacity_gb || srv.platform_capacity_gb} GB
+                              </div>
+                            )}
                           </div>
                         )}
                       </TableCell>
@@ -695,9 +960,11 @@ export function StorageServersPage() {
                             variant="ghost"
                             className="h-7 text-xs px-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
                             onClick={() => handleTestConnection(srv)}
+                            disabled={testingId === srv.id}
                             title="Test server connectivity"
                           >
-                            <Radio size={12} className="mr-1" /> Test
+                            <Radio size={12} className={`mr-1 ${testingId === srv.id ? 'animate-pulse text-amber-500' : ''}`} />
+                            {testingId === srv.id ? 'Testing…' : 'Test'}
                           </Button>
 
                           <Button
@@ -759,133 +1026,275 @@ export function StorageServersPage() {
             </div>
 
             <div className="space-y-3 bg-surface-2 p-3.5 rounded-xl border border-border">
-              {/* Endpoint */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
-                  Endpoint / Host URL
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={activeCredsServer.credentials?.endpoint || 'Standard AWS S3 / Direct'}
-                    className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
-                  />
-                  {activeCredsServer.credentials?.endpoint && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 text-xs shrink-0"
-                      onClick={() => handleCopy(activeCredsServer.credentials?.endpoint, 'Endpoint')}
-                    >
-                      {copiedKey === 'Endpoint' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                    </Button>
-                  )}
-                </div>
-              </div>
+              {activeCredsServer.backend === 'sftp' || activeCredsServer.backend === 'ftp' ? (
+                <>
+                  {/* SFTP/FTP Host & Port */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                        Server Host / IP
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          readOnly
+                          value={activeCredsServer.credentials?.host || activeCredsServer.credentials?.endpoint || '—'}
+                          className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                        />
+                        {(activeCredsServer.credentials?.host || activeCredsServer.credentials?.endpoint) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-2.5 text-xs shrink-0"
+                            onClick={() => handleCopy(activeCredsServer.credentials?.host || activeCredsServer.credentials?.endpoint, 'Host')}
+                          >
+                            {copiedKey === 'Host' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                        Port
+                      </label>
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.port || (activeCredsServer.backend === 'sftp' ? 22 : 21)}
+                        className="w-full text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                    </div>
+                  </div>
 
-              {/* Bucket */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
-                  Bucket Name / Root Path
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={activeCredsServer.credentials?.bucket || 'Default bucket'}
-                    className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
-                  />
-                  {activeCredsServer.credentials?.bucket && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 text-xs shrink-0"
-                      onClick={() => handleCopy(activeCredsServer.credentials?.bucket, 'Bucket')}
-                    >
-                      {copiedKey === 'Bucket' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                    </Button>
-                  )}
-                </div>
-              </div>
+                  {/* Root Path */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                      Root Storage Path
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.root || activeCredsServer.credentials?.bucket || '/'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {(activeCredsServer.credentials?.root || activeCredsServer.credentials?.bucket) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.root || activeCredsServer.credentials?.bucket, 'Root Path')}
+                        >
+                          {copiedKey === 'Root Path' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-              {/* Region */}
-              {activeCredsServer.credentials?.region && (
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
-                    Region
-                  </label>
-                  <input
-                    readOnly
-                    value={activeCredsServer.credentials?.region}
-                    className="w-full text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
-                  />
-                </div>
+                  {/* Username */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                      Username
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.username || activeCredsServer.credentials?.accessKey || '—'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {(activeCredsServer.credentials?.username || activeCredsServer.credentials?.accessKey) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.username || activeCredsServer.credentials?.accessKey, 'Username')}
+                        >
+                          {copiedKey === 'Username' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                        Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowSecretKey(!showSecretKey)}
+                        className="text-[11px] text-brand-primary hover:underline flex items-center gap-1"
+                      >
+                        {showSecretKey ? (
+                          <>
+                            <EyeOff size={12} /> Hide Password
+                          </>
+                        ) : (
+                          <>
+                            <Eye size={12} /> Reveal Password
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        type={showSecretKey ? 'text' : 'password'}
+                        value={activeCredsServer.credentials?.password || activeCredsServer.credentials?.secretKey || '••••••••••••••••'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {(activeCredsServer.credentials?.password || activeCredsServer.credentials?.secretKey) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.password || activeCredsServer.credentials?.secretKey, 'Password')}
+                        >
+                          {copiedKey === 'Password' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* S3 Endpoint */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                      Endpoint / Host URL
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.endpoint || 'Standard AWS S3 / Direct'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {activeCredsServer.credentials?.endpoint && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.endpoint, 'Endpoint')}
+                        >
+                          {copiedKey === 'Endpoint' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* S3 Bucket */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                      Bucket Name / Root Path
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.bucket || 'Default bucket'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {activeCredsServer.credentials?.bucket && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.bucket, 'Bucket')}
+                        >
+                          {copiedKey === 'Bucket' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Region */}
+                  {activeCredsServer.credentials?.region && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                        Region
+                      </label>
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.region}
+                        className="w-full text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                    </div>
+                  )}
+
+                  {/* Access Key */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                      Access Key ID
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={activeCredsServer.credentials?.accessKey || 'None configured'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {activeCredsServer.credentials?.accessKey && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.accessKey, 'Access Key')}
+                        >
+                          {copiedKey === 'Access Key' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Secret Key */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
+                        Secret Access Key
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowSecretKey(!showSecretKey)}
+                        className="text-[11px] text-brand-primary hover:underline flex items-center gap-1"
+                      >
+                        {showSecretKey ? (
+                          <>
+                            <EyeOff size={12} /> Hide Secret
+                          </>
+                        ) : (
+                          <>
+                            <Eye size={12} /> Reveal Secret
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        type={showSecretKey ? 'text' : 'password'}
+                        value={activeCredsServer.credentials?.secretKey || '••••••••••••••••'}
+                        className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
+                      />
+                      {activeCredsServer.credentials?.secretKey && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => handleCopy(activeCredsServer.credentials?.secretKey, 'Secret Key')}
+                        >
+                          {copiedKey === 'Secret Key' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
 
-              {/* Access Key / Username */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
-                  Access Key ID / Username
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={activeCredsServer.credentials?.accessKey || 'None configured'}
-                    className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
-                  />
-                  {activeCredsServer.credentials?.accessKey && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 text-xs shrink-0"
-                      onClick={() => handleCopy(activeCredsServer.credentials?.accessKey, 'Access Key')}
-                    >
-                      {copiedKey === 'Access Key' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                    </Button>
-                  )}
+              {/* Total Capacity Allocation */}
+              {(activeCredsServer.capacity_gb || activeCredsServer.platform_capacity_gb) && (
+                <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-muted">Allocated Storage Quota:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {activeCredsServer.capacity_gb || activeCredsServer.platform_capacity_gb} GB
+                  </span>
                 </div>
-              </div>
-
-              {/* Secret Key / Password with Reveal Toggle */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-muted uppercase tracking-wider block">
-                    Secret Access Key / Password
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowSecretKey(!showSecretKey)}
-                    className="text-[11px] text-brand-primary hover:underline flex items-center gap-1"
-                  >
-                    {showSecretKey ? (
-                      <>
-                        <EyeOff size={12} /> Hide Secret
-                      </>
-                    ) : (
-                      <>
-                        <Eye size={12} /> Reveal Secret
-                      </>
-                    )}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    type={showSecretKey ? 'text' : 'password'}
-                    value={activeCredsServer.credentials?.secretKey || '••••••••••••••••'}
-                    className="flex-1 text-xs font-mono bg-surface-1 border border-border rounded-lg px-2.5 py-1.5 text-foreground"
-                  />
-                  {activeCredsServer.credentials?.secretKey && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 text-xs shrink-0"
-                      onClick={() => handleCopy(activeCredsServer.credentials?.secretKey, 'Secret Key')}
-                    >
-                      {copiedKey === 'Secret Key' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                    </Button>
-                  )}
-                </div>
-              </div>
+              )}
 
               {/* Host / Vendor Notes */}
               {activeCredsServer.platform_notes && (
@@ -1008,84 +1417,177 @@ export function StorageServersPage() {
             />
           </div>
 
+          {/* Total Storage Capacity */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">
+              Total Storage Capacity (GB)
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="e.g. 500, 1000, 2000"
+              value={totalCapacityGb}
+              onChange={(e) => {
+                setTotalCapacityGb(e.target.value);
+                setPlatformCapacityGb(e.target.value);
+              }}
+              className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+            />
+            <p className="text-[10px] text-muted">
+              Total storage disk quota in GB for this server. Live storage usage will be tracked against this limit.
+            </p>
+          </div>
+
           {/* Connection Details Section */}
           <div className="border-t border-border pt-3 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-muted uppercase tracking-wider">
-                {providerType === 'platform' ? 'Platform Credentials & Connection' : 'Basic Connection Details'}
+                {providerType === 'platform' ? 'Platform Credentials & Connection' : 'Connection Details'}
               </p>
               <span className="text-[10px] text-muted">
-                {providerType === 'platform' ? 'Full credentials saved & decrypted for admin' : 'Basic endpoint & bucket only'}
+                {providerType === 'platform' ? 'Encrypted and stored for platform management' : 'Connection reference'}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground block">Endpoint / Host URL</label>
-                <input
-                  type="text"
-                  placeholder="e.g. s3.eu-central-1.wasabisys.com"
-                  value={endpoint}
-                  onChange={(e) => setEndpoint(e.target.value)}
-                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground block">Bucket Name / Root Path</label>
-                <input
-                  type="text"
-                  placeholder="e.g. studio-assets-vault"
-                  value={bucket}
-                  onChange={(e) => setBucket(e.target.value)}
-                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground block">Region</label>
-                <input
-                  type="text"
-                  placeholder="e.g. us-east-1"
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
-                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
-                />
-              </div>
-
-              {providerType === 'platform' ? (
-                <>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground block">Access Key ID *</label>
+            {backend === 'sftp' || backend === 'ftp' ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Server Host / IP *</label>
                     <input
                       type="text"
-                      placeholder="API Key or Username"
-                      value={accessKey}
-                      onChange={(e) => setAccessKey(e.target.value)}
+                      placeholder="e.g. sb-ftpgcam.rtsiot.com or 192.168.1.100"
+                      value={host}
+                      onChange={(e) => setHost(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Port</label>
+                    <input
+                      type="number"
+                      placeholder={backend === 'sftp' ? '22' : '21'}
+                      value={port}
+                      onChange={(e) => setPort(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-foreground block">Root Storage Path</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. /ftp/sample or /uploads"
+                    value={root}
+                    onChange={(e) => setRoot(e.target.value)}
+                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                  />
+                </div>
+
+                {providerType === 'platform' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-foreground block">Username *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. ftpuser"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-foreground block">Password *</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center p-2 rounded-lg bg-surface-2 border border-border text-[11px] text-muted">
+                    <Info size={14} className="mr-1.5 shrink-0 text-emerald-500" />
+                    <span>Studio-owned servers do not store master credentials on the platform. Studio manages their own credentials.</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">
+                      {backend === 'wasabi' ? 'Wasabi Service Endpoint' : backend === 'minio' ? 'MinIO Server URL' : 'S3 Endpoint URL (Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={backend === 'wasabi' ? 's3.wasabisys.com' : backend === 'minio' ? 'https://minio.yourdomain.com:9000' : 'https://s3.amazonaws.com'}
+                      value={endpoint}
+                      onChange={(e) => setEndpoint(e.target.value)}
                       className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground block">Secret Key / Password *</label>
+                    <label className="text-xs font-semibold text-foreground block">Bucket Name *</label>
                     <input
-                      type="password"
-                      placeholder="••••••••••••"
-                      value={secretKey}
-                      onChange={(e) => setSecretKey(e.target.value)}
+                      type="text"
+                      placeholder="e.g. studio-assets-vault"
+                      value={bucket}
+                      onChange={(e) => setBucket(e.target.value)}
                       className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
                     />
                   </div>
-                </>
-              ) : (
-                <div className="sm:col-span-2 flex items-center p-2 rounded-lg bg-surface-2 border border-border text-[11px] text-muted">
-                  <Info size={14} className="mr-1.5 shrink-0 text-emerald-500" />
-                  <span>Studio-owned servers do not expose superadmin credentials. Connection keys are managed directly by the studio.</span>
                 </div>
-              )}
-            </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Region</label>
+                    <input
+                      type="text"
+                      placeholder="us-east-1"
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
+                    />
+                  </div>
+
+                  {providerType === 'platform' ? (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-foreground block">Access Key ID *</label>
+                        <input
+                          type="text"
+                          placeholder="Access Key"
+                          value={accessKey}
+                          onChange={(e) => setAccessKey(e.target.value)}
+                          className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-foreground block">Secret Access Key *</label>
+                        <input
+                          type="password"
+                          placeholder="••••••••••••"
+                          value={secretKey}
+                          onChange={(e) => setSecretKey(e.target.value)}
+                          className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="sm:col-span-2 flex items-center p-2 rounded-lg bg-surface-2 border border-border text-[11px] text-muted">
+                      <Info size={14} className="mr-1.5 shrink-0 text-emerald-500" />
+                      <span>Studio-owned servers manage their own credentials directly.</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
             <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer pt-1">
               <input
@@ -1103,7 +1605,7 @@ export function StorageServersPage() {
             <div className="border-t border-border pt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider">
-                  Platform Cost & Renewal (Super Admin Only)
+                  Platform Cost & Renewal
                 </p>
                 <span className="text-[10px] text-purple-600 font-medium">Platform-Managed Node</span>
               </div>
@@ -1146,29 +1648,15 @@ export function StorageServersPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">Disk Size / Allocation (GB)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 500"
-                    value={platformCapacityGb}
-                    onChange={(e) => setPlatformCapacityGb(e.target.value)}
-                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">Internal Vendor / Host Notes</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Hetzner VPS #4829 or Wasabi sub-account"
-                    value={platformNotes}
-                    onChange={(e) => setPlatformNotes(e.target.value)}
-                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground block">Internal Vendor / Host Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hetzner VPS #4829 or Wasabi sub-account"
+                  value={platformNotes}
+                  onChange={(e) => setPlatformNotes(e.target.value)}
+                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
+                />
               </div>
             </div>
           ) : (
@@ -1298,60 +1786,176 @@ export function StorageServersPage() {
             />
           </div>
 
-          <div className="border-t border-border pt-3 space-y-3">
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">
-              {editProviderType === 'platform' ? 'Update Credentials (Optional)' : 'Connection Details'}
+          {/* Total Storage Capacity */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">
+              Total Storage Capacity (GB)
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="e.g. 500, 1000, 2000"
+              value={editTotalCapacityGb}
+              onChange={(e) => {
+                setEditTotalCapacityGb(e.target.value);
+                setEditPlatformCapacityGb(e.target.value);
+              }}
+              className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+            />
+            <p className="text-[10px] text-muted">
+              Total storage disk quota in GB for this server. Live storage usage will be tracked against this limit.
             </p>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground block">Endpoint / Host URL</label>
-                <input
-                  type="text"
-                  placeholder="New Endpoint (leave blank to keep)"
-                  value={editEndpoint}
-                  onChange={(e) => setEditEndpoint(e.target.value)}
-                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground block">Bucket Name / Root Path</label>
-                <input
-                  type="text"
-                  placeholder="New Bucket Name"
-                  value={editBucket}
-                  onChange={(e) => setEditBucket(e.target.value)}
-                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                />
-              </div>
+          <div className="border-t border-border pt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider">
+                {editProviderType === 'platform' ? 'Update Credentials (Optional)' : 'Connection Details'}
+              </p>
+              <span className="text-[10px] text-muted">
+                {editProviderType === 'platform' ? 'Leave blank to keep existing keys' : 'Connection reference'}
+              </span>
             </div>
 
-            {editProviderType === 'platform' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {editBackend === 'sftp' || editBackend === 'ftp' ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Server Host / IP *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. sb-ftpgcam.rtsiot.com or 192.168.1.100"
+                      value={editHost}
+                      onChange={(e) => setEditHost(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Port</label>
+                    <input
+                      type="number"
+                      placeholder={editBackend === 'sftp' ? '22' : '21'}
+                      value={editPort}
+                      onChange={(e) => setEditPort(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">New Access Key</label>
+                  <label className="text-xs font-semibold text-foreground block">Root Storage Path</label>
                   <input
                     type="text"
-                    placeholder="Leave blank to keep current"
-                    value={editAccessKey}
-                    onChange={(e) => setEditAccessKey(e.target.value)}
+                    placeholder="e.g. /ftp/sample or /uploads"
+                    value={editRoot}
+                    onChange={(e) => setEditRoot(e.target.value)}
                     className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">New Secret Key</label>
-                  <input
-                    type="password"
-                    placeholder="•••••••••••• (leave blank to keep)"
-                    value={editSecretKey}
-                    onChange={(e) => setEditSecretKey(e.target.value)}
-                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                  />
+                {editProviderType === 'platform' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-foreground block">Username</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. ftpuser"
+                        value={editUsername}
+                        onChange={(e) => setEditUsername(e.target.value)}
+                        className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-foreground block">Password</label>
+                      <input
+                        type="password"
+                        placeholder="•••••••••••• (leave blank to keep)"
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center p-2 rounded-lg bg-surface-2 border border-border text-[11px] text-muted">
+                    <Info size={14} className="mr-1.5 shrink-0 text-emerald-500" />
+                    <span>Studio-owned servers manage credentials directly on their side.</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">
+                      {editBackend === 'wasabi' ? 'Wasabi Service Endpoint' : editBackend === 'minio' ? 'MinIO Server URL' : 'Endpoint / Host URL'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. s3.wasabisys.com or https://s3.amazonaws.com"
+                      value={editEndpoint}
+                      onChange={(e) => setEditEndpoint(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Bucket Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. studio-assets-vault"
+                      value={editBucket}
+                      onChange={(e) => setEditBucket(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                    />
+                  </div>
                 </div>
-              </div>
-            ) : null}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground block">Region</label>
+                    <input
+                      type="text"
+                      placeholder="us-east-1"
+                      value={editRegion}
+                      onChange={(e) => setEditRegion(e.target.value)}
+                      className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
+                    />
+                  </div>
+
+                  {editProviderType === 'platform' ? (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-foreground block">New Access Key</label>
+                        <input
+                          type="text"
+                          placeholder="Leave blank to keep current"
+                          value={editAccessKey}
+                          onChange={(e) => setEditAccessKey(e.target.value)}
+                          className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-foreground block">New Secret Key</label>
+                        <input
+                          type="password"
+                          placeholder="•••••••••••• (leave blank to keep)"
+                          value={editSecretKey}
+                          onChange={(e) => setEditSecretKey(e.target.value)}
+                          className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="sm:col-span-2 flex items-center p-2 rounded-lg bg-surface-2 border border-border text-[11px] text-muted">
+                      <Info size={14} className="mr-1.5 shrink-0 text-emerald-500" />
+                      <span>Studio-owned servers manage credentials directly on their side.</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
             <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer pt-1">
               <input
@@ -1366,7 +1970,7 @@ export function StorageServersPage() {
 
           {editProviderType === 'platform' ? (
             <div className="border-t border-border pt-3 space-y-3">
-              <p className="text-xs font-semibold text-muted uppercase tracking-wider">Platform Cost & Renewal (Super Admin Only)</p>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider">Platform Cost & Renewal</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-foreground block">Monthly Cost (₹)</label>
@@ -1405,29 +2009,15 @@ export function StorageServersPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">Disk Size / Allocation (GB)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 500"
-                    value={editPlatformCapacityGb}
-                    onChange={(e) => setEditPlatformCapacityGb(e.target.value)}
-                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground font-mono"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground block">Internal Vendor / Host Notes</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Hetzner VPS #4829 or Wasabi sub-account"
-                    value={editPlatformNotes}
-                    onChange={(e) => setEditPlatformNotes(e.target.value)}
-                    className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground block">Internal Vendor / Host Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hetzner VPS #4829 or Wasabi sub-account"
+                  value={editPlatformNotes}
+                  onChange={(e) => setEditPlatformNotes(e.target.value)}
+                  className="w-full text-xs bg-surface-1 border border-border rounded-lg px-2.5 py-2 text-foreground"
+                />
               </div>
             </div>
           ) : null}

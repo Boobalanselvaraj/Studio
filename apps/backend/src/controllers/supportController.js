@@ -105,7 +105,7 @@ exports.update = async (req, res, next) => {
         const hasOtherFields = priority !== undefined || resolution !== undefined || subject !== undefined || description !== undefined || category !== undefined;
         if (hasOtherFields) {
           return res.status(403).json({
-            error: 'Super Admin tickets: studios can only update the ticket status. Other fields are locked.',
+            error: 'Provider tickets: studios can only update the ticket status. Other fields are locked.',
           });
         }
         if (status === undefined) return res.status(400).json({ error: 'No valid fields to update' });
@@ -173,7 +173,7 @@ exports.remove = async (req, res, next) => {
       });
       if (creator?.is_super_admin) {
         return res.status(403).json({
-          error: 'Tickets created by Super Admin cannot be deleted by studio. You can update the status to resolved or closed instead.',
+          error: 'Tickets created by Provider cannot be deleted by studio. You can update the status to resolved or closed instead.',
         });
       }
       if (existing.created_by !== req.user.id) {

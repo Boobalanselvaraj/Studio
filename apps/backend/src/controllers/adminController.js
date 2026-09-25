@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 const { checkCameraLimit, checkStorageQuota } = require('../services/allocationService');
 const { encryptStorageCredentials, decryptStorageCredentials } = require('../config/storage');
+const { testConnection: probeStorage, getStorageUsage } = require('../services/storageAdapters');
 
 const VALID_BILLING_STATUSES = new Set(['active', 'past_due', 'suspended', 'comped']);
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -86,6 +87,8 @@ async function createStudio(req, res, next) {
       slug,
       subdomain,
       custom_domain,
+      phone,
+      address,
       storage_quota_gb = 50,
       camera_limit = 5,
       features = {},
@@ -143,6 +146,8 @@ async function createStudio(req, res, next) {
           slug: normalizedSlug,
           subdomain,
           custom_domain,
+          phone: phone ? phone.trim() : null,
+          address: address ? address.trim() : null,
         },
       });
 
@@ -215,6 +220,7 @@ async function createStudio(req, res, next) {
             data: {
               email: targetOwnerEmail,
               full_name: targetOwnerName,
+              phone: phone ? phone.trim() : null,
               password_hash,
               is_super_admin: false,
             },
@@ -245,6 +251,140 @@ async function createStudio(req, res, next) {
     });
 
     res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateStudio(req, res, next) {
+  try {
+    const studioId = req.params.id;
+    const {
+      name,
+      phone,
+      address,
+      billing_status,
+      owner_name,
+      owner_email,
+      owner_password,
+    } = req.body;
+
+    const studio = await prisma.studios.findUnique({
+      where: { id: studioId },
+      include: {
+        studio_users: {
+          where: { role: 'studio_owner' },
+          include: { user: true },
+        },
+        studio_billing_profile: true,
+      },
+    });
+
+    if (!studio) {
+      return res.status(404).json({ error: 'Studio not found' });
+    }
+
+    // 1. Update studio basic info
+    const studioData = {};
+    if (name !== undefined && name.trim()) studioData.name = name.trim();
+    if (phone !== undefined) studioData.phone = phone ? phone.trim() : null;
+    if (address !== undefined) studioData.address = address ? address.trim() : null;
+
+    if (Object.keys(studioData).length > 0) {
+      await prisma.studios.update({
+        where: { id: studioId },
+        data: studioData,
+      });
+    }
+
+    // 2. Update billing status if provided
+    if (billing_status !== undefined) {
+      if (!VALID_BILLING_STATUSES.has(billing_status)) {
+        return res.status(400).json({ error: 'Invalid billing status' });
+      }
+      await prisma.studio_billing_profile.upsert({
+        where: { studio_id: studioId },
+        create: {
+          studio_id: studioId,
+          billing_status,
+          storage_quota_gb: 50,
+          camera_limit: 5,
+        },
+        update: {
+          billing_status,
+          updated_at: new Date(),
+        },
+      });
+    }
+
+    // 3. Update or reset Owner User login credentials & profile
+    const ownerStudioUser = studio.studio_users?.[0];
+    if (ownerStudioUser && ownerStudioUser.user) {
+      const userData = {};
+      if (owner_name !== undefined && owner_name.trim()) {
+        userData.full_name = owner_name.trim();
+      }
+      if (owner_email !== undefined && owner_email.trim()) {
+        userData.email = owner_email.trim().toLowerCase();
+      }
+      if (phone !== undefined) {
+        userData.phone = phone ? phone.trim() : null;
+      }
+      if (owner_password && owner_password.trim()) {
+        const salt = await bcrypt.genSalt(10);
+        userData.password_hash = await bcrypt.hash(owner_password.trim(), salt);
+      }
+
+      if (Object.keys(userData).length > 0) {
+        await prisma.users.update({
+          where: { id: ownerStudioUser.user.id },
+          data: userData,
+        });
+      }
+    }
+
+    // 4. Audit Log
+    if (req.user) {
+      await prisma.audit_logs.create({
+        data: {
+          user_id: req.user.id,
+          studio_id: studioId,
+          action: 'UPDATE_STUDIO_DETAILS',
+          resource_type: 'studios',
+          resource_id: studioId,
+          details: {
+            name,
+            phone,
+            address,
+            billing_status,
+            password_changed: Boolean(owner_password && owner_password.trim()),
+          },
+        },
+      });
+    }
+
+    // Fetch updated studio
+    const updated = await prisma.studios.findUnique({
+      where: { id: studioId },
+      include: {
+        studio_branding: true,
+        studio_billing_profile: { include: { billing_plan: true } },
+        studio_users: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                full_name: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({ message: 'Studio details updated successfully', studio: updated });
   } catch (err) {
     next(err);
   }
@@ -649,29 +789,63 @@ async function listAllStorageServers(req, res, next) {
       orderBy: { created_at: 'desc' },
     });
 
+    // Compute live stored bytes for each server from assets
+    const assetUsageByProvider = await prisma.assets.groupBy({
+      by: ['storage_provider_id'],
+      where: { is_soft_deleted: false, storage_provider_id: { not: null } },
+      _sum: { file_size_bytes: true },
+      _count: { id: true },
+    });
+    const usageMap = new Map();
+    for (const item of assetUsageByProvider) {
+      if (item.storage_provider_id) {
+        usageMap.set(item.storage_provider_id, Number(item._sum.file_size_bytes || 0));
+      }
+    }
+
     const servers = rawServers.map((srv) => {
       // Determine if platform managed (superadmin bought & assigned) or studio owned (bought by studio)
       const isPlatformManaged = srv.provider_type === 'platform';
       let credentials = null;
 
-      if (srv.storage_credentials?.encrypted_config) {
+      const credRecord = Array.isArray(srv.storage_credentials)
+        ? srv.storage_credentials[0]
+        : srv.storage_credentials;
+
+      if (credRecord?.encrypted_config) {
         try {
-          const decrypted = decryptStorageCredentials(srv.storage_credentials.encrypted_config);
+          const decrypted = decryptStorageCredentials(credRecord.encrypted_config);
+          const isSftpOrFtp = srv.backend === 'sftp' || srv.backend === 'ftp';
           if (isPlatformManaged) {
             // We bought server and assigned to them: return FULL credentials
             credentials = {
               endpoint: decrypted.endpoint || decrypted.host || '',
-              bucket: decrypted.bucket || decrypted.rootPath || '',
-              region: decrypted.region || '',
-              accessKey: decrypted.accessKey || decrypted.username || '',
-              secretKey: decrypted.secretKey || decrypted.password || '',
+              host: decrypted.host || decrypted.endpoint || '',
+              port: decrypted.port || (srv.backend === 'ftp' ? 21 : 22),
+              bucket: decrypted.bucket || decrypted.root || decrypted.rootPath || '',
+              root: decrypted.root || decrypted.bucket || decrypted.rootPath || '/',
+              region: decrypted.region || 'us-east-1',
+              username: decrypted.username || decrypted.accessKey || '',
+              accessKey: decrypted.accessKey || decrypted.accessKeyId || decrypted.username || '',
+              secretKey: decrypted.secretKey || decrypted.secretAccessKey || decrypted.password || '',
+              password: decrypted.password || decrypted.secretKey || decrypted.secretAccessKey || '',
+              privateKey: decrypted.privateKey || '',
+              passphrase: decrypted.passphrase || '',
+              secure: decrypted.secure || false,
+              forcePathStyle: decrypted.forcePathStyle || false,
             };
           } else {
             // Studio-owned server: basic details only (no secret keys/passwords)
             credentials = {
               endpoint: decrypted.endpoint || decrypted.host || '',
-              bucket: decrypted.bucket || decrypted.rootPath || '',
+              host: decrypted.host || decrypted.endpoint || '',
+              port: decrypted.port || (srv.backend === 'ftp' ? 21 : 22),
+              bucket: decrypted.bucket || decrypted.root || decrypted.rootPath || '',
+              root: decrypted.root || decrypted.bucket || decrypted.rootPath || '/',
               region: decrypted.region || '',
+              username: decrypted.username || decrypted.accessKey || '',
+              accessKey: decrypted.accessKey || decrypted.accessKeyId || decrypted.username || '',
+              secure: decrypted.secure || false,
             };
           }
         } catch (decErr) {
@@ -679,13 +853,23 @@ async function listAllStorageServers(req, res, next) {
         }
       }
 
+      const capVal = srv.capacity_gb || srv.platform_capacity_gb || null;
+      const usedBytes = usageMap.get(srv.id) || 0;
+      const totalBytes = capVal ? Number(capVal) * 1024 * 1024 * 1024 : null;
+      const freeBytes = totalBytes ? Math.max(0, totalBytes - usedBytes) : null;
+
       return {
         ...srv,
-        storage_credentials: srv.storage_credentials
-          ? { id: srv.storage_credentials.id, created_at: srv.storage_credentials.created_at }
+        storage_credentials: credRecord
+          ? { id: credRecord.id, created_at: credRecord.created_at }
           : null,
         credentials,
         is_platform_managed: isPlatformManaged,
+        capacity_gb: capVal,
+        platform_capacity_gb: capVal,
+        used_bytes: usedBytes,
+        total_bytes: totalBytes,
+        free_bytes: freeBytes,
       };
     });
 
@@ -708,6 +892,7 @@ async function createStorageServer(req, res, next) {
       platform_renewal_period = 'monthly',
       platform_renewal_date,
       platform_capacity_gb,
+      capacity_gb,
       platform_notes,
     } = req.body;
     if (!studio_id || !name || !name.trim()) {
@@ -720,6 +905,11 @@ async function createStorageServer(req, res, next) {
     }
 
     const isPlatformManaged = provider_type === 'platform';
+    const parsedCapacity = (capacity_gb !== undefined && capacity_gb !== '')
+      ? parseInt(capacity_gb, 10)
+      : (platform_capacity_gb !== undefined && platform_capacity_gb !== '' ? parseInt(platform_capacity_gb, 10) : null);
+
+    const prismaBackend = (backend === 'wasabi' || backend === 'minio') ? 's3' : backend;
 
     const provider = await prisma.$transaction(async (tx) => {
       const p = await tx.storage_providers.create({
@@ -727,7 +917,7 @@ async function createStorageServer(req, res, next) {
           studio_id,
           name: name.trim(),
           provider_type: isPlatformManaged ? 'platform' : 'studio_owned',
-          backend,
+          backend: prismaBackend,
           is_default: !!is_default,
           is_enabled: true,
           health: 'ok',
@@ -735,12 +925,12 @@ async function createStorageServer(req, res, next) {
           platform_monthly_cost: isPlatformManaged && platform_monthly_cost !== undefined && platform_monthly_cost !== '' ? Number(platform_monthly_cost) : null,
           platform_renewal_period: isPlatformManaged ? (platform_renewal_period || 'monthly') : null,
           platform_renewal_date: isPlatformManaged && platform_renewal_date ? new Date(platform_renewal_date) : null,
-          platform_capacity_gb: isPlatformManaged && platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null,
+          platform_capacity_gb: parsedCapacity,
           platform_notes: isPlatformManaged ? (platform_notes || null) : null,
         },
       });
 
-      if (credentials && (credentials.endpoint || credentials.bucket || credentials.accessKey || credentials.secretKey)) {
+      if (credentials && typeof credentials === 'object' && Object.keys(credentials).length > 0) {
         const encrypted = encryptStorageCredentials(credentials);
         await tx.storage_credentials.create({
           data: {
@@ -774,6 +964,7 @@ async function updateStorageServer(req, res, next) {
       platform_renewal_period,
       platform_renewal_date,
       platform_capacity_gb,
+      capacity_gb,
       platform_notes,
     } = req.body;
 
@@ -788,13 +979,19 @@ async function updateStorageServer(req, res, next) {
     const nextProviderType = provider_type || existing.provider_type;
     const isPlatformManaged = nextProviderType === 'platform';
 
+    const parsedCapacity = (capacity_gb !== undefined && capacity_gb !== '')
+      ? parseInt(capacity_gb, 10)
+      : (platform_capacity_gb !== undefined && platform_capacity_gb !== '' ? parseInt(platform_capacity_gb, 10) : null);
+
+    const prismaBackend = backend ? ((backend === 'wasabi' || backend === 'minio') ? 's3' : backend) : undefined;
+
     const updated = await prisma.$transaction(async (tx) => {
       const p = await tx.storage_providers.update({
         where: { id },
         data: {
           studio_id: studio_id || undefined,
           name: name ? name.trim() : undefined,
-          backend: backend || undefined,
+          backend: prismaBackend || undefined,
           provider_type: nextProviderType,
           is_enabled: is_enabled !== undefined ? !!is_enabled : undefined,
           health: health || undefined,
@@ -808,9 +1005,7 @@ async function updateStorageServer(req, res, next) {
           platform_renewal_date: isPlatformManaged
             ? (platform_renewal_date !== undefined ? (platform_renewal_date ? new Date(platform_renewal_date) : null) : undefined)
             : null,
-          platform_capacity_gb: isPlatformManaged
-            ? (platform_capacity_gb !== undefined ? (platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null) : undefined)
-            : null,
+          platform_capacity_gb: parsedCapacity !== undefined ? parsedCapacity : undefined,
           platform_notes: isPlatformManaged
             ? (platform_notes !== undefined ? platform_notes : undefined)
             : null,
@@ -826,6 +1021,9 @@ async function updateStorageServer(req, res, next) {
             merged = { ...currentDecrypted, ...credentials };
             if (!credentials.secretKey && currentDecrypted.secretKey) {
               merged.secretKey = currentDecrypted.secretKey;
+            }
+            if (!credentials.password && currentDecrypted.password) {
+              merged.password = currentDecrypted.password;
             }
           } catch (e) {
             // keep credentials as is
@@ -843,6 +1041,74 @@ async function updateStorageServer(req, res, next) {
     });
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function testStorageServer(req, res, next) {
+  try {
+    const { id } = req.params;
+    const provider = await prisma.storage_providers.findUnique({
+      where: { id },
+      include: { storage_credentials: true },
+    });
+    if (!provider) return res.status(404).json({ error: 'Storage server not found' });
+
+    const testRes = await probeStorage(provider);
+    await prisma.storage_providers.update({
+      where: { id: provider.id },
+      data: {
+        health: testRes.success ? 'ok' : 'error',
+        tested_at: testRes.tested_at || new Date(),
+      },
+    });
+
+    res.json(testRes);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getStorageServerStats(req, res, next) {
+  try {
+    const { id } = req.params;
+    const provider = await prisma.storage_providers.findUnique({
+      where: { id },
+      include: { storage_credentials: true },
+    });
+    if (!provider) return res.status(404).json({ error: 'Storage server not found' });
+
+    const stats = await getStorageUsage(provider);
+    let usedBytes = stats.used_bytes;
+    if (usedBytes == null) {
+      const dbSum = await prisma.assets.aggregate({
+        where: { storage_provider_id: provider.id, is_soft_deleted: false },
+        _sum: { file_size_bytes: true },
+        _count: { id: true },
+      });
+      usedBytes = Number(dbSum._sum.file_size_bytes || 0);
+      if ((!stats.file_count || stats.file_count === 0) && dbSum._count.id > 0) {
+        stats.file_count = dbSum._count.id;
+      }
+    }
+
+    let totalBytes = stats.total_bytes;
+    let freeBytes = stats.free_bytes;
+    if ((totalBytes == null || totalBytes === 0) && provider.platform_capacity_gb) {
+      totalBytes = Number(provider.platform_capacity_gb) * 1024 * 1024 * 1024;
+      freeBytes = totalBytes > (usedBytes || 0) ? totalBytes - (usedBytes || 0) : 0;
+    }
+
+    res.json({
+      id: provider.id,
+      capacity_gb: provider.platform_capacity_gb || null,
+      used_bytes: usedBytes,
+      total_bytes: totalBytes,
+      free_bytes: freeBytes,
+      file_count: stats.file_count,
+      error: stats.error || null,
+    });
   } catch (err) {
     next(err);
   }
@@ -1052,6 +1318,7 @@ async function deleteStudioInvoice(req, res, next) {
 module.exports = {
   listStudios,
   createStudio,
+  updateStudio,
   updateStudioBilling,
   getStudioAllocations,
   listAllocationRequests,
@@ -1068,6 +1335,8 @@ module.exports = {
   createStorageServer,
   updateStorageServer,
   deleteStorageServer,
+  testStorageServer,
+  getStorageServerStats,
   listAllInvoices,
   listStudioInvoices,
   generateStudioInvoice,

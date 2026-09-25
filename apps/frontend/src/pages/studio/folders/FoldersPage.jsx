@@ -546,7 +546,7 @@ export function FoldersPage() {
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-base text-foreground">Live Wi-Fi Camera Ingest Listener</h3>
                   <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 font-bold uppercase tracking-wider">
-                    ● SFTPGo Active : 2022
+                    ● Gateway Active : 2022
                   </span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
@@ -1059,7 +1059,8 @@ export function FoldersPage() {
       {/* ========================================================================= */}
       <Modal open={!!renameAsset} onOpenChange={open=>!open&&setRenameAsset(null)} title="Rename file" description="Update the display name in your library."><form className="form-stack" onSubmit={async e=>{e.preventDefault();try{await foldersApi.updateAsset(renameAsset.id,{filename:renameAsset.filename});setRenameAsset(null);await Promise.all([loadTree(),loadExplorerData()]);}catch(e){toast.error(e.response?.data?.error||'Could not rename file');}}}><label>Filename<input required maxLength={255} value={renameAsset?.filename||''} onChange={e=>setRenameAsset({...renameAsset,filename:e.target.value})}/></label><Button type="submit">Save name</Button></form></Modal>
       <Modal open={!!renameFolder} onOpenChange={open=>!open&&setRenameFolder(null)} title="Rename collection" description="Give this collection a clear name."><form className="form-stack" onSubmit={async e=>{e.preventDefault();try{await foldersApi.update(renameFolder.id,{name:renameFolder.name});setRenameFolder(null);await loadTree();}catch(e){toast.error(e.response?.data?.error||'Could not rename collection');}}}><label>Name<input required value={renameFolder?.name||''} onChange={e=>setRenameFolder({...renameFolder,name:e.target.value})}/></label><Button type="submit">Save name</Button></form></Modal>
-      <ConfirmModal open={!!removeAsset} onOpenChange={open=>!open&&setRemoveAsset(null)} title="Remove file from library?" description="This hides the file from all galleries. The original remains in external storage." confirmText="Remove file" variant="danger" onConfirm={async()=>{try{await foldersApi.deleteAsset(removeAsset);setRemoveAsset(null);await Promise.all([loadTree(),loadExplorerData()]);}catch(e){toast.error(e.response?.data?.error||'Could not remove file');}}}/>
+      <ConfirmModal open={!!removeAsset} onOpenChange={open=>!open&&setRemoveAsset(null)} title="Permanently delete file?" description="This permanently removes the file from your remote storage server and studio library, freeing up server disk space. This action cannot be undone." confirmText="Delete file" variant="danger" onConfirm={async()=>{try{await foldersApi.deleteAsset(removeAsset);setRemoveAsset(null);await Promise.all([loadTree(),loadExplorerData()]);}catch(e){toast.error(e.response?.data?.error||'Could not remove file');}}}/>
+
       <MediaViewer selected={lightboxAsset} assets={selectedFolder?.assets || explorerData.assets} onClose={()=>setLightboxAsset(null)}/>
 
       {/* ========================================================================= */}

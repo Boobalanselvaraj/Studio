@@ -90,9 +90,11 @@ export const eventsApi = {
 };
 
 export const foldersApi = {
- updateAsset: async(id,data)=>(await api.patch('/studio/folders/assets/'+id,data)).data,
- deleteAsset: async(id)=>(await api.delete('/studio/folders/assets/'+id)).data,
- addFolderAssets: async(id,asset_ids)=>(await api.post('/studio/folders/'+id+'/assets',{asset_ids})).data,
+  updateAsset: async(id,data)=>(await api.patch('/studio/folders/assets/'+id,data)).data,
+  deleteAsset: async(id)=>(await api.delete('/studio/folders/assets/'+id)).data,
+  bulkDeleteAssets: async(assetIds)=>(await api.post('/studio/folders/assets/bulk-delete', { asset_ids: assetIds })).data,
+  deleteProviderFolder: async(providerId, folderPath)=>(await api.post('/studio/folders/provider-folder/delete', { provider_id: providerId, folder_path: folderPath })).data,
+  addFolderAssets: async(id,asset_ids)=>(await api.post('/studio/folders/'+id+'/assets',{asset_ids})).data,
   getTree: async () => {
     const res = await api.get('/studio/folders/tree');
     return res.data;
@@ -128,10 +130,11 @@ export const foldersApi = {
     });
     return res.data;
   },
-  delete: async (id) => {
-    const res = await api.delete(`/studio/folders/${id}`);
+  delete: async (id, deleteFiles = false) => {
+    const res = await api.delete(`/studio/folders/${id}${deleteFiles ? '?delete_files=true' : ''}`);
     return res.data;
   },
+
   publishGallery: async (id, data = {}) => {
     const res = await api.post(`/studio/folders/${id}/publish-gallery`, data);
     return res.data;
@@ -366,6 +369,10 @@ export const adminApi = {
     const res = await api.post('/admin/studios', data);
     return res.data;
   },
+  updateStudio: async (id, data) => {
+    const res = await api.patch(`/admin/studios/${id}`, data);
+    return res.data;
+  },
   updateStudioBilling: async (id, data) => {
     const res = await api.patch(`/admin/studios/${id}/billing-profile`, data);
     return res.data;
@@ -448,6 +455,14 @@ export const adminApi = {
   },
   deleteStorageServer: async (id) => {
     const res = await api.delete(`/admin/storage-servers/${id}`);
+    return res.data;
+  },
+  testStorageServer: async (id) => {
+    const res = await api.post(`/admin/storage-servers/${id}/test`);
+    return res.data;
+  },
+  getStorageServerStats: async (id) => {
+    const res = await api.get(`/admin/storage-servers/${id}/stats`);
     return res.data;
   },
   // Subscriptions & Recurring multi-cycle schedules

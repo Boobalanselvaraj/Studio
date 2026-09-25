@@ -43,6 +43,7 @@ const blankForm = {
   privateKey: '',
   passphrase: '',
   secure: false,
+  capacity_gb: '',
 };
 
 export function StorageSettingsPage() {
@@ -171,6 +172,7 @@ export function StorageSettingsPage() {
         name: form.name.trim(),
         backend: form.backend,
         credentials,
+        capacity_gb: form.capacity_gb ? Number(form.capacity_gb) : undefined,
       };
       if(editing) await storageApi.updateProvider(editing.id,payload);
       else await storageApi.createProvider(payload);
@@ -255,7 +257,7 @@ export function StorageSettingsPage() {
             <span>Ingest Gateway</span>
           </div>
           <div className="text-base font-bold flex items-center gap-1.5">
-            SFTPGo Active
+            Ingest Gateway Active
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
           <div className="text-[11px] text-muted">Listening on Port 2022</div>
@@ -447,7 +449,7 @@ export function StorageSettingsPage() {
                     };
                     const totalBytes =
                       stats?.total_bytes ||
-                      (p.platform_capacity_gb ? Number(p.platform_capacity_gb) * 1024 * 1024 * 1024 : null);
+                      ((p.capacity_gb || p.platform_capacity_gb) ? Number(p.capacity_gb || p.platform_capacity_gb) * 1024 * 1024 * 1024 : null);
                     const freeBytes =
                       stats?.free_bytes != null
                         ? stats.free_bytes
@@ -570,7 +572,7 @@ export function StorageSettingsPage() {
 
                   {true && (
                     <>
-                      <Button size="sm" variant="outline" onClick={()=>{setEditing(p);setForm({...blankForm,...p.connection,name:p.name,backend:p.backend});setOpen(true);}}>Edit connection</Button>
+                      <Button size="sm" variant="outline" onClick={()=>{setEditing(p);setForm({...blankForm,...p.connection,name:p.name,backend:p.backend,capacity_gb:p.capacity_gb || p.platform_capacity_gb || ''});setOpen(true);}}>Edit connection</Button>
                       {!p.is_default && (
                         <Button
                           size="sm"
@@ -643,6 +645,20 @@ export function StorageSettingsPage() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
+          </label>
+
+          <label>
+            Total Storage Capacity (GB)
+            <input
+              type="number"
+              min="1"
+              placeholder="e.g. 500 (GB total storage)"
+              value={form.capacity_gb}
+              onChange={(e) => setForm({ ...form, capacity_gb: e.target.value })}
+            />
+            <span className="text-[11px] text-muted block mt-0.5">
+              Set your server's total disk size in GB to display live used, free, and available storage.
+            </span>
           </label>
 
           <div className="space-y-1">

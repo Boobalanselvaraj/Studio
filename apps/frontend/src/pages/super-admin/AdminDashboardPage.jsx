@@ -26,10 +26,37 @@ import {
   Calendar,
   Zap,
   Clock,
+  Phone,
+  MapPin,
+  Lock,
+  Pause,
+  Play,
+  FileText,
 } from 'lucide-react';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { adminApi } from '../../api/services';
 import { toast } from '../../components/ui/toast';
+
+const serviceTypeLabels = {
+  support: 'Support & SLA Maintenance',
+  storage: 'Cloud Storage & Hosting',
+  platform_license: 'Platform Software License',
+  maintenance: 'System Maintenance & Backup',
+  camera_pack: 'Camera Slot Pack',
+  custom: 'Custom Billing Service',
+};
+
+const formatCycle = (cycle) => {
+  if (!cycle) return 'Monthly';
+  if (cycle === 'weekly') return 'Weekly (7 Days)';
+  if (cycle === 'bi_weekly' || cycle === 'biweekly') return 'Bi-Weekly (14 Days)';
+  if (cycle === 'monthly') return 'Monthly (30 Days)';
+  if (cycle === 'quarterly') return 'Quarterly (90 Days)';
+  if (cycle === 'half_yearly') return 'Half-Yearly (180 Days)';
+  if (cycle === 'yearly' || cycle === 'annually') return 'Yearly (365 Days)';
+  if (String(cycle).startsWith('custom_')) return `Every ${cycle.replace('custom_', '')} Days`;
+  return cycle;
+};
 
 export function AdminDashboardPage() {
   const [studios, setStudios] = useState([]);
@@ -49,15 +76,23 @@ export function AdminDashboardPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // Create studio form state (slug removed, auto-generated)
+  // Create studio form state
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [billingPlanId, setBillingPlanId] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('studio123456');
 
   // Manage studio form state
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
   const [editStatus, setEditStatus] = useState('active');
+  const [editOwnerName, setEditOwnerName] = useState('');
+  const [editOwnerEmail, setEditOwnerEmail] = useState('');
+  const [editOwnerPassword, setEditOwnerPassword] = useState('');
 
   // Invoices & Subscriptions management state
   const [billingTab, setBillingTab] = useState('invoices');
@@ -74,13 +109,18 @@ export function AdminDashboardPage() {
   const [editInvoiceNotes, setEditInvoiceNotes] = useState('');
   const [editInvoiceBusy, setEditInvoiceBusy] = useState(false);
 
+  // Recurring Subscriptions form state
   const [createSubModal, setCreateSubModal] = useState(false);
+  const [editingSubId, setEditingSubId] = useState(null);
   const [subForm, setSubForm] = useState({
-    plan_name: 'Studio Pro Tier',
-    interval: 'monthly',
-    amount: 2500,
-    storage_limit_gb: 500,
-    max_cameras: 5,
+    label: 'Monthly Studio Support & SLA',
+    service_type: 'support',
+    billing_cycle: 'monthly',
+    custom_days: 30,
+    unit_price: 2000,
+    next_billing_date: '',
+    auto_generate_invoice: true,
+    notes: 'Monthly recurring technical support, storage monitoring & priority SLA',
   });
   const [subBusy, setSubBusy] = useState(false);
 
@@ -133,18 +173,21 @@ export function AdminDashboardPage() {
       const res = await adminApi.createStudio({
         name: cleanName,
         slug: derivedSlug,
+        phone: phone.trim() || undefined,
+        address: address.trim() || undefined,
         billing_plan_id: billingPlanId || undefined,
         owner_name: ownerName.trim() || `${cleanName} Owner`,
         owner_email: cleanEmail,
         owner_password: ownerPassword.trim() || 'studio123456',
       });
 
-
       setCreatedResult(res);
       setCreateModal(false);
       setSuccessModal(true);
 
       setName('');
+      setPhone('');
+      setAddress('');
       setOwnerName('');
       setOwnerEmail('');
       setOwnerPassword('studio123456');
@@ -163,13 +206,18 @@ export function AdminDashboardPage() {
     try {
       setBusy(true);
       setError('');
-      await adminApi.updateStudioBilling(selectedStudio.id, {
+      await adminApi.updateStudio(selectedStudio.id, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        address: editAddress.trim(),
         billing_status: editStatus,
+        owner_name: editOwnerName.trim(),
+        owner_email: editOwnerEmail.trim(),
+        owner_password: editOwnerPassword.trim() || undefined,
       });
 
-
       setManageModal(false);
-      toast.success(`Studio settings for "${selectedStudio.name}" updated successfully`);
+      toast.success(`Studio settings and credentials for "${editName || selectedStudio.name}" updated successfully`);
       loadData();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to update studio settings');
@@ -180,7 +228,14 @@ export function AdminDashboardPage() {
 
   const openManage = (studio) => {
     setSelectedStudio(studio);
+    setEditName(studio.name || '');
+    setEditPhone(studio.phone || '');
+    setEditAddress(studio.address || '');
     setEditStatus(studio.studio_billing_profile?.billing_status || 'active');
+    const owner = studio.studio_users?.find((su) => su.role === 'studio_owner')?.user;
+    setEditOwnerName(owner?.full_name || '');
+    setEditOwnerEmail(owner?.email || '');
+    setEditOwnerPassword('');
     setManageModal(true);
   };
 
@@ -247,19 +302,92 @@ export function AdminDashboardPage() {
     }
   };
 
+  const openNewSub = () => {
+    setEditingSubId(null);
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 30);
+    setSubForm({
+      label: 'Monthly Studio Support & SLA',
+      service_type: 'support',
+      billing_cycle: 'monthly',
+      custom_days: 30,
+      unit_price: 2000,
+      next_billing_date: defaultDate.toISOString().split('T')[0],
+      auto_generate_invoice: true,
+      notes: 'Monthly recurring technical support, storage monitoring & priority SLA',
+    });
+    setCreateSubModal(true);
+  };
+
+  const openEditSub = (sub) => {
+    setEditingSubId(sub.id);
+    const isCustom = sub.billing_cycle && sub.billing_cycle.startsWith('custom_');
+    const customDays = isCustom ? parseInt(sub.billing_cycle.replace(/[^0-9]/g, ''), 10) : 30;
+    setSubForm({
+      label: sub.label || '',
+      service_type: sub.service_type || 'support',
+      billing_cycle: isCustom ? 'custom_days' : sub.billing_cycle || 'monthly',
+      custom_days: customDays || 30,
+      unit_price: Number(sub.unit_price) || 0,
+      next_billing_date: sub.next_billing_date ? new Date(sub.next_billing_date).toISOString().split('T')[0] : '',
+      auto_generate_invoice: sub.auto_generate_invoice !== false,
+      notes: sub.notes || '',
+    });
+    setCreateSubModal(true);
+  };
+
   const handleCreateSubscription = async (e) => {
     e.preventDefault();
     if (!selectedStudio) return;
     try {
       setSubBusy(true);
-      const newSub = await adminApi.createSubscription(selectedStudio.id, subForm);
-      setStudioSubscriptions((prev) => [newSub, ...prev]);
+      const cycleValue = subForm.billing_cycle === 'custom_days'
+        ? `custom_${Math.max(1, Number(subForm.custom_days) || 30)}`
+        : subForm.billing_cycle;
+
+      const payload = {
+        label: subForm.label,
+        service_type: subForm.service_type,
+        billing_cycle: cycleValue,
+        unit_price: Number(subForm.unit_price),
+        next_billing_date: subForm.next_billing_date || undefined,
+        auto_generate_invoice: subForm.auto_generate_invoice,
+        notes: subForm.notes,
+      };
+
+      if (editingSubId) {
+        const updated = await adminApi.updateSubscription(selectedStudio.id, editingSubId, payload);
+        setStudioSubscriptions((prev) =>
+          prev.map((s) => (s.id === editingSubId ? updated : s))
+        );
+        toast.success('Subscription plan updated successfully');
+      } else {
+        const newSub = await adminApi.createSubscription(selectedStudio.id, payload);
+        setStudioSubscriptions((prev) => [newSub, ...prev]);
+        toast.success('Recurring subscription created successfully');
+      }
       setCreateSubModal(false);
-      toast.success('Recurring subscription created successfully');
+      setEditingSubId(null);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to create subscription');
+      toast.error(err.response?.data?.error || 'Failed to save subscription');
     } finally {
       setSubBusy(false);
+    }
+  };
+
+  const handleToggleSubPause = async (sub) => {
+    if (!selectedStudio) return;
+    try {
+      const nextStatus = sub.status === 'active' ? 'paused' : 'active';
+      const updated = await adminApi.updateSubscription(selectedStudio.id, sub.id, {
+        status: nextStatus,
+      });
+      setStudioSubscriptions((prev) =>
+        prev.map((s) => (s.id === sub.id ? { ...s, status: nextStatus } : s))
+      );
+      toast.success(nextStatus === 'paused' ? 'Subscription schedule paused' : 'Subscription schedule resumed');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update subscription status');
     }
   };
 
@@ -268,9 +396,9 @@ export function AdminDashboardPage() {
     try {
       await adminApi.cancelSubscription(selectedStudio.id, subId);
       setStudioSubscriptions((prev) =>
-        prev.map((s) => (s.id === subId ? { ...s, status: 'canceled' } : s))
+        prev.map((s) => (s.id === subId ? { ...s, status: 'cancelled' } : s))
       );
-      toast.success('Subscription canceled');
+      toast.success('Subscription cancelled');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to cancel subscription');
     }
@@ -279,8 +407,11 @@ export function AdminDashboardPage() {
   const handleTriggerSubInvoice = async (subId) => {
     if (!selectedStudio) return;
     try {
-      const inv = await adminApi.triggerSubscriptionInvoice(selectedStudio.id, subId);
+      const res = await adminApi.triggerSubscriptionInvoice(selectedStudio.id, subId);
+      const inv = res?.invoice || res;
       setStudioInvoices((prev) => [inv, ...prev]);
+      const subs = await adminApi.listSubscriptions(selectedStudio.id);
+      if (Array.isArray(subs)) setStudioSubscriptions(subs);
       setBillingTab('invoices');
       toast.success('Next cycle invoice generated successfully!');
     } catch (err) {
@@ -408,7 +539,7 @@ export function AdminDashboardPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="font-semibold text-xs text-muted">Studio Name</TableHead>
+                  <TableHead className="font-semibold text-xs text-muted">Studio & Contact</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Owner Account</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Status</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Cameras</TableHead>
@@ -427,14 +558,34 @@ export function AdminDashboardPage() {
 
                   return (
                     <TableRow key={s.id} className="border-border hover:bg-surface-2/60 transition-colors">
-                      <TableCell className="font-semibold text-sm flex items-center gap-2 text-foreground">
-                        <Building2 className="w-4 h-4 text-brand-primary shrink-0" /> {s.name}
+                      <TableCell className="text-xs">
+                        <div className="font-semibold text-sm flex items-center gap-2 text-foreground">
+                          <Building2 className="w-4 h-4 text-brand-primary shrink-0" /> {s.name}
+                        </div>
+                        {s.phone && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-muted mt-1 font-mono">
+                            <Phone size={11} className="text-emerald-500 shrink-0" />
+                            <span>{s.phone}</span>
+                          </div>
+                        )}
+                        {s.address && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-muted mt-0.5" title={s.address}>
+                            <MapPin size={11} className="text-brand-primary shrink-0" />
+                            <span className="truncate max-w-[220px]">{s.address}</span>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs">
                         {owner ? (
                           <div>
                             <span className="font-medium text-foreground">{owner.full_name}</span>
                             <p className="text-muted text-[11px]">{owner.email}</p>
+                            {owner.phone && !s.phone && (
+                              <p className="text-muted text-[11px] flex items-center gap-1 mt-0.5 font-mono">
+                                <Phone size={10} className="text-emerald-500 shrink-0" />
+                                {owner.phone}
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-muted italic">Unassigned</span>
@@ -505,7 +656,7 @@ export function AdminDashboardPage() {
         </Card>
       )}
 
-      {/* Modal: Provision Studio (No slug input, auto-generated) */}
+      {/* Modal: Provision Studio */}
       <Modal
         open={createModal}
         onOpenChange={(v) => {
@@ -513,69 +664,105 @@ export function AdminDashboardPage() {
           if (!v) setError('');
         }}
         title="Provision New Studio Tenant"
-        description="Registers a new studio tenant and provisions initial owner credentials."
+        description="Registers a new studio tenant, contact details, and provisions initial owner credentials."
       >
         <form className="form-stack space-y-4" onSubmit={handleCreate}>
           {error && <p className="form-error">{error}</p>}
 
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">1. Studio Information</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+            <Building2 size={13} className="text-brand-primary" />
+            1. Studio Information & Contact
+          </h3>
 
-          <label className="text-xs font-medium">
-            Studio Name
-            <input
-              required
-              className="mt-1"
-              placeholder="e.g. Lumina Creative Studios"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (!ownerEmail && e.target.value.trim()) {
-                  const autoSlug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '');
-                  setOwnerEmail(`owner@${autoSlug || 'studio'}.com`);
-                }
-              }}
-            />
-          </label>
+          <div className="space-y-3">
+            <label className="text-xs font-medium block">
+              Studio Name *
+              <input
+                required
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="e.g. Lumina Creative Studios"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (!ownerEmail && e.target.value.trim()) {
+                    const autoSlug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+                    setOwnerEmail(`owner@${autoSlug || 'studio'}.com`);
+                  }
+                }}
+              />
+            </label>
 
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted pt-2 border-t border-border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs font-medium block">
+                Mobile / Contact Phone
+                <div className="relative mt-1">
+                  <Phone size={13} className="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+                  <input
+                    type="tel"
+                    className="w-full pl-8 pr-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                    placeholder="e.g. +91 98765 43210"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
+              </label>
+
+              <label className="text-xs font-medium block">
+                Owner Full Name *
+                <input
+                  required
+                  className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                  placeholder="Jane Doe"
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <label className="text-xs font-medium block">
+              Physical / Business Address
+              <div className="relative mt-1">
+                <MapPin size={13} className="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+                <textarea
+                  rows={2}
+                  className="w-full pl-8 pr-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary resize-none"
+                  placeholder="Street, City, State, Postal Code, Country"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                />
+              </div>
+            </label>
+          </div>
+
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted pt-2 border-t border-border flex items-center gap-1.5">
+            <Lock size={13} className="text-brand-primary" />
             2. Studio Owner Credentials
           </h3>
 
           <div className="form-grid">
-            <label className="text-xs font-medium">
-              Owner Full Name
-              <input
-                required
-                className="mt-1"
-                placeholder="Jane Doe"
-                value={ownerName}
-                onChange={(e) => setOwnerName(e.target.value)}
-              />
-            </label>
-
-            <label className="text-xs font-medium">
-              Owner Login Email
+            <label className="text-xs font-medium block">
+              Owner Login Email *
               <input
                 type="email"
                 required
-                className="mt-1"
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
                 placeholder="jane@luminastudio.com"
                 value={ownerEmail}
                 onChange={(e) => setOwnerEmail(e.target.value)}
               />
             </label>
-          </div>
 
-          <label className="text-xs font-medium">
-            Temporary Login Password
-            <input
-              type="text"
-              required
-              className="mt-1"
-              value={ownerPassword}
-              onChange={(e) => setOwnerPassword(e.target.value)}
-            />
-          </label>
+            <label className="text-xs font-medium block">
+              Initial Login Password *
+              <input
+                type="text"
+                required
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                value={ownerPassword}
+                onChange={(e) => setOwnerPassword(e.target.value)}
+              />
+            </label>
+          </div>
 
           <div className="modal-actions pt-4 border-t border-border">
             <Button
@@ -608,6 +795,18 @@ export function AdminDashboardPage() {
                 <span className="text-muted">Studio:</span>{' '}
                 <strong className="text-foreground">{createdResult.studio?.name}</strong>
               </div>
+              {createdResult.studio?.phone && (
+                <div>
+                  <span className="text-muted">Mobile / Phone:</span>{' '}
+                  <strong className="text-foreground">{createdResult.studio?.phone}</strong>
+                </div>
+              )}
+              {createdResult.studio?.address && (
+                <div>
+                  <span className="text-muted">Address:</span>{' '}
+                  <strong className="text-foreground">{createdResult.studio?.address}</strong>
+                </div>
+              )}
               <div>
                 <span className="text-muted">Owner Login Email:</span>{' '}
                 <strong className="text-foreground">{createdResult.owner?.email}</strong>
@@ -624,7 +823,7 @@ export function AdminDashboardPage() {
                 size="sm"
                 onClick={() => {
                   navigator.clipboard.writeText(
-                    `Studio: ${createdResult.studio?.name}\nEmail: ${createdResult.owner?.email}\nPassword: ${createdResult.owner?.temporary_password}`
+                    `Studio: ${createdResult.studio?.name}\nPhone: ${createdResult.studio?.phone || 'N/A'}\nAddress: ${createdResult.studio?.address || 'N/A'}\nEmail: ${createdResult.owner?.email}\nPassword: ${createdResult.owner?.temporary_password}`
                   );
                   toast.success('Credentials copied to clipboard!');
                 }}
@@ -637,55 +836,149 @@ export function AdminDashboardPage() {
         </Modal>
       )}
 
-      {/* Modal: Edit Studio Quotas & Operational Limits */}
+      {/* Modal: Edit Studio Settings & Credentials */}
       <Modal
         open={manageModal}
         onOpenChange={(v) => {
           setManageModal(v);
           if (!v) setError('');
         }}
-        title={`Edit Studio Settings — ${selectedStudio?.name || 'Studio'}`}
-        description="Update camera connections and account status. Media stays on studio external servers."
+        title={`Edit Studio — ${selectedStudio?.name || 'Studio'}`}
+        description="Update studio contact information, operational status, and reset owner login credentials."
       >
         <form className="form-stack space-y-4" onSubmit={handleManageSubmit}>
           {error && <p className="form-error">{error}</p>}
 
-          <label className="text-xs font-medium">
-            Account Operational Status
-            <div className="mt-1">
-              <Select
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value)}
-                searchable={false}
-                options={[
-                  {
-                    value: 'active',
-                    label: 'Active (Full Access)',
-                    description: 'Normal studio operation with full storage & live ingest access',
-                    badge: 'pill-emerald',
-                  },
-                  {
-                    value: 'past_due',
-                    label: 'Past Due (Warning Notice)',
-                    description: 'Payment grace period with billing warning banner shown to studio',
-                    badge: 'pill-amber',
-                  },
-                  {
-                    value: 'suspended',
-                    label: 'Suspended (Blocks Ingest & New Shares)',
-                    description: 'Locked write access; historical shares remain read-only',
-                    badge: 'pill-rose',
-                  },
-                  {
-                    value: 'comped',
-                    label: 'Comped (Free Administrative Access)',
-                    description: 'Special administrative or promotional waiver without billing charges',
-                    badge: 'pill-purple',
-                  },
-                ]}
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+            <Building2 size={13} className="text-brand-primary" />
+            1. Studio Profile & Contact
+          </h3>
+
+          <div className="space-y-3">
+            <label className="text-xs font-medium block">
+              Studio Name *
+              <input
+                required
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="e.g. Lumina Creative Studios"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
               />
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs font-medium block">
+                Mobile / Contact Phone
+                <div className="relative mt-1">
+                  <Phone size={13} className="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+                  <input
+                    type="tel"
+                    className="w-full pl-8 pr-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                    placeholder="e.g. +91 98765 43210"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                  />
+                </div>
+              </label>
+
+              <label className="text-xs font-medium block">
+                Account Status
+                <div className="mt-1">
+                  <Select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    searchable={false}
+                    options={[
+                      {
+                        value: 'active',
+                        label: 'Active (Full Access)',
+                        description: 'Normal studio operation with full storage & live ingest access',
+                        badge: 'pill-emerald',
+                      },
+                      {
+                        value: 'past_due',
+                        label: 'Past Due (Warning Notice)',
+                        description: 'Payment grace period with billing warning banner shown to studio',
+                        badge: 'pill-amber',
+                      },
+                      {
+                        value: 'suspended',
+                        label: 'Suspended (Locked Ingest)',
+                        description: 'Locked write access; historical shares remain read-only',
+                        badge: 'pill-rose',
+                      },
+                      {
+                        value: 'comped',
+                        label: 'Comped (Administrative Free)',
+                        description: 'Special administrative or promotional waiver without billing charges',
+                        badge: 'pill-purple',
+                      },
+                    ]}
+                  />
+                </div>
+              </label>
             </div>
-          </label>
+
+            <label className="text-xs font-medium block">
+              Physical / Business Address
+              <div className="relative mt-1">
+                <MapPin size={13} className="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+                <textarea
+                  rows={2}
+                  className="w-full pl-8 pr-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary resize-none"
+                  placeholder="Street, City, State, Postal Code, Country"
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                />
+              </div>
+            </label>
+          </div>
+
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted pt-3 border-t border-border flex items-center gap-1.5">
+            <Lock size={13} className="text-amber-500" />
+            2. Studio Owner & Login Credentials
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-xs font-medium block">
+              Owner Full Name
+              <input
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="Owner Name"
+                value={editOwnerName}
+                onChange={(e) => setEditOwnerName(e.target.value)}
+              />
+            </label>
+
+            <label className="text-xs font-medium block">
+              Owner Login Email
+              <input
+                type="email"
+                className="mt-1 w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="owner@studio.com"
+                value={editOwnerEmail}
+                onChange={(e) => setEditOwnerEmail(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <KeyRound size={13} className="text-amber-500" />
+              Reset Studio Owner Password
+            </label>
+            <input
+              type="text"
+              autoComplete="new-password"
+              className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary font-mono"
+              placeholder="Enter new password (leave blank to keep current password)"
+              value={editOwnerPassword}
+              onChange={(e) => setEditOwnerPassword(e.target.value)}
+            />
+            <p className="text-[11px] text-muted">
+              If the studio owner forgot their password or requested a credential reset, enter a new password here. Leaving it blank will keep their current password unchanged.
+            </p>
+          </div>
 
           <div className="modal-actions pt-4 border-t border-border">
             <Button
@@ -698,7 +991,7 @@ export function AdminDashboardPage() {
             </Button>
             <Button type="submit" disabled={busy} className="bg-brand-primary text-white">
               {busy ? <Loader2 size={16} className="animate-spin mr-1.5" /> : null}
-              Save Changes
+              Save Studio & Credentials
             </Button>
           </div>
         </form>
@@ -843,87 +1136,138 @@ export function AdminDashboardPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted">Recurring Plans</h4>
-                  <p className="text-[11px] text-muted">Automated billing cycles for this studio</p>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted">Recurring Service Schedules</h4>
+                  <p className="text-[11px] text-muted">Multiple independent periodic costs (support, storage, software, retainers)</p>
                 </div>
                 <Button
                   size="sm"
-                  onClick={() => setCreateSubModal(true)}
+                  onClick={openNewSub}
                   className="flex items-center gap-1.5 text-xs bg-brand-primary text-white"
                 >
-                  <Plus size={14} /> Add Subscription
+                  <Plus size={14} /> Add Recurring Schedule
                 </Button>
               </div>
 
               {loadingSubscriptions ? (
                 <div className="py-8 text-center text-muted text-xs">
                   <Loader2 size={24} className="animate-spin mx-auto mb-2 text-brand-primary" />
-                  Loading subscriptions…
+                  Loading recurring schedules…
                 </div>
               ) : (
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                  {studioSubscriptions.map((sub) => (
-                    <div key={sub.id} className="p-3.5 rounded-xl border border-border bg-surface-2/40 space-y-2.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-bold text-foreground text-sm">{sub.plan_name}</span>
-                          <span className="text-muted ml-2 capitalize font-mono text-[11px] bg-surface-3 px-2 py-0.5 rounded border border-border">
-                            {sub.interval}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-foreground">₹{Number(sub.amount).toLocaleString()}</span>
-                          <Badge variant={sub.status === 'active' ? 'success' : 'secondary'} className="capitalize">
-                            {sub.status}
-                          </Badge>
-                        </div>
-                      </div>
+                  {studioSubscriptions.map((sub) => {
+                    const cycleText = formatCycle(sub.billing_cycle);
+                    const categoryText = serviceTypeLabels[sub.service_type] || sub.service_type;
+                    const isPaused = sub.status === 'paused';
+                    const isCancelled = sub.status === 'cancelled' || sub.status === 'canceled';
 
-                      <div className="grid grid-cols-3 gap-2 text-[11px] py-1.5 px-2.5 rounded-lg bg-surface border border-border/60">
-                        <div>
-                          <span className="block text-muted text-[10px]">Next Billing Date</span>
-                          <strong className="text-foreground">
-                            {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString() : '—'}
-                          </strong>
+                    return (
+                      <div key={sub.id} className="p-3.5 rounded-xl border border-border bg-surface-2/40 space-y-2.5 text-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-foreground text-sm">{sub.label}</span>
+                              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary border border-brand-primary/20">
+                                {categoryText}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-muted text-[11px] flex-wrap">
+                              <span className="font-mono bg-surface-3 px-2 py-0.5 rounded border border-border flex items-center gap-1">
+                                <Clock size={11} className="text-brand-primary" /> {cycleText}
+                              </span>
+                              {sub.auto_generate_invoice !== false ? (
+                                <span className="text-emerald-500 font-medium flex items-center gap-1">
+                                  <CheckCircle2 size={11} /> Auto-Invoicing
+                                </span>
+                              ) : (
+                                <span className="text-amber-500 font-medium">Manual Trigger Only</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-bold text-sm text-foreground font-mono">
+                              ₹{Number(sub.unit_price || sub.amount || 0).toLocaleString()}
+                            </span>
+                            <Badge variant={sub.status === 'active' ? 'success' : isPaused ? 'warning' : 'secondary'} className="capitalize">
+                              {sub.status}
+                            </Badge>
+                          </div>
                         </div>
-                        <div>
-                          <span className="block text-muted text-[10px]">Storage Quota</span>
-                          <strong className="text-foreground">{sub.storage_limit_gb || '—'} GB</strong>
-                        </div>
-                        <div>
-                          <span className="block text-muted text-[10px]">Max Cameras</span>
-                          <strong className="text-foreground">{sub.max_cameras || '—'} Cameras</strong>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
-                        {sub.status === 'active' && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-[11px] flex items-center gap-1 text-emerald-600 hover:text-emerald-700"
-                              onClick={() => handleTriggerSubInvoice(sub.id)}
-                              title="Immediately generate itemized invoice for this cycle"
-                            >
-                              <Zap size={11} /> Generate Cycle Invoice
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-[11px] text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
-                              onClick={() => handleCancelSubscription(sub.id)}
-                            >
-                              Cancel Plan
-                            </Button>
-                          </>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] py-1.5 px-2.5 rounded-lg bg-surface border border-border/60">
+                          <div>
+                            <span className="block text-muted text-[10px]">Next Invoicing Date</span>
+                            <strong className="text-foreground flex items-center gap-1 mt-0.5">
+                              <Calendar size={11} className="text-brand-primary" />
+                              {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString() : '—'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-muted text-[10px]">Last Invoiced</span>
+                            <strong className="text-foreground mt-0.5 block">
+                              {sub.last_invoiced_at ? new Date(sub.last_invoiced_at).toLocaleDateString() : 'Never'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-muted text-[10px]">Active Since</span>
+                            <strong className="text-foreground mt-0.5 block">
+                              {sub.started_at ? new Date(sub.started_at).toLocaleDateString() : '—'}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {sub.notes && (
+                          <p className="text-[11px] text-muted italic bg-surface-3/50 px-2.5 py-1 rounded border border-border/30">
+                            {sub.notes}
+                          </p>
                         )}
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+                          {!isCancelled && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[11px] flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10 border-emerald-500/20"
+                                onClick={() => handleTriggerSubInvoice(sub.id)}
+                                title="Immediately generate itemized invoice for this cycle"
+                              >
+                                <Zap size={11} /> Generate Cycle Invoice
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[11px] flex items-center gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 border-amber-500/20"
+                                onClick={() => handleToggleSubPause(sub)}
+                              >
+                                {isPaused ? <Play size={11} /> : <Pause size={11} />}
+                                {isPaused ? 'Resume' : 'Pause'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[11px] flex items-center gap-1"
+                                onClick={() => openEditSub(sub)}
+                              >
+                                <Edit2 size={11} /> Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[11px] text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
+                                onClick={() => handleCancelSubscription(sub.id)}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {studioSubscriptions.length === 0 && (
-                    <p className="text-center py-6 text-muted text-xs">No active subscription schedule configured for this studio.</p>
+                    <p className="text-center py-6 text-muted text-xs">No active recurring schedules configured for this studio.</p>
                   )}
                 </div>
               )}
@@ -1106,41 +1450,47 @@ export function AdminDashboardPage() {
         )}
       </Modal>
 
-      {/* Modal: Add Recurring Subscription Schedule */}
+      {/* Modal: Add/Edit Recurring Subscription Schedule */}
       <Modal
         open={createSubModal}
-        onOpenChange={setCreateSubModal}
-        title={`Add Recurring Subscription — ${selectedStudio?.name || 'Studio'}`}
-        description="Configure a recurring billing plan that auto-cycles (monthly, quarterly, or yearly)."
+        onOpenChange={(v) => {
+          setCreateSubModal(v);
+          if (!v) setEditingSubId(null);
+        }}
+        title={`${editingSubId ? 'Edit Recurring Schedule' : 'Add Recurring Schedule'} — ${selectedStudio?.name || 'Studio'}`}
+        description="Configure an automated multi-cycle retainer or subscription item (monthly support, storage, license, etc.)."
       >
         <form onSubmit={handleCreateSubscription} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">
-              Plan / Package Name *
+              Service / Schedule Name *
             </label>
             <input
               type="text"
               className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
-              placeholder="e.g. Studio Pro Annual Fleet"
-              value={subForm.plan_name}
-              onChange={(e) => setSubForm({ ...subForm, plan_name: e.target.value })}
+              placeholder="e.g. Monthly Technical Support & Maintenance SLA"
+              value={subForm.label}
+              onChange={(e) => setSubForm({ ...subForm, label: e.target.value })}
               required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">
-                Billing Cycle Interval
+                Service Category
               </label>
               <Select
-                value={subForm.interval}
-                onChange={(e) => setSubForm({ ...subForm, interval: e.target.value })}
+                value={subForm.service_type}
+                onChange={(e) => setSubForm({ ...subForm, service_type: e.target.value })}
                 searchable={false}
                 options={[
-                  { value: 'monthly', label: 'Monthly (Every 30 Days)' },
-                  { value: 'quarterly', label: 'Quarterly (Every 90 Days)' },
-                  { value: 'yearly', label: 'Yearly (Every 365 Days)' },
+                  { value: 'support', label: 'Support & SLA Maintenance' },
+                  { value: 'storage', label: 'Cloud Storage Node & Hosting' },
+                  { value: 'platform_license', label: 'Platform Software License' },
+                  { value: 'maintenance', label: 'System Maintenance & Backup' },
+                  { value: 'camera_pack', label: 'Camera Slot Pack' },
+                  { value: 'custom', label: 'Custom Recurring Service' },
                 ]}
               />
             </div>
@@ -1153,48 +1503,112 @@ export function AdminDashboardPage() {
                 type="number"
                 min={0}
                 className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
-                value={subForm.amount}
-                onChange={(e) => setSubForm({ ...subForm, amount: Number(e.target.value) })}
+                value={subForm.unit_price}
+                onChange={(e) => setSubForm({ ...subForm, unit_price: Number(e.target.value) })}
                 required
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">
-                Included Storage (GB)
+                Billing Cycle Interval
               </label>
-              <input
-                type="number"
-                min={0}
-                className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
-                placeholder="500"
-                value={subForm.storage_limit_gb}
-                onChange={(e) => setSubForm({ ...subForm, storage_limit_gb: Number(e.target.value) })}
+              <Select
+                value={subForm.billing_cycle}
+                onChange={(e) => setSubForm({ ...subForm, billing_cycle: e.target.value })}
+                searchable={false}
+                options={[
+                  { value: 'weekly', label: 'Weekly (Every 7 Days)' },
+                  { value: 'bi_weekly', label: 'Bi-Weekly (Every 14 Days)' },
+                  { value: 'monthly', label: 'Monthly (Every Month / 30 Days)' },
+                  { value: 'quarterly', label: 'Quarterly (Every 3 Months / 90 Days)' },
+                  { value: 'half_yearly', label: 'Half-Yearly (Every 6 Months / 180 Days)' },
+                  { value: 'yearly', label: 'Yearly (Every 1 Year / 365 Days)' },
+                  { value: 'custom_days', label: 'Custom Interval (Specify Days)' },
+                ]}
               />
             </div>
 
+            {subForm.billing_cycle === 'custom_days' ? (
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">
+                  Custom Interval (Days) *
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                  placeholder="e.g. 15, 45, 60"
+                  value={subForm.custom_days}
+                  onChange={(e) => setSubForm({ ...subForm, custom_days: e.target.value })}
+                  required
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1">
+                  First / Next Billing Date
+                </label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                  value={subForm.next_billing_date}
+                  onChange={(e) => setSubForm({ ...subForm, next_billing_date: e.target.value })}
+                />
+              </div>
+            )}
+          </div>
+
+          {subForm.billing_cycle === 'custom_days' && (
             <div>
               <label className="block text-xs font-semibold text-muted mb-1">
-                Max Allowed Cameras
+                First / Next Billing Date
               </label>
               <input
-                type="number"
-                min={1}
+                type="date"
                 className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
-                placeholder="5"
-                value={subForm.max_cameras}
-                onChange={(e) => setSubForm({ ...subForm, max_cameras: Number(e.target.value) })}
+                value={subForm.next_billing_date}
+                onChange={(e) => setSubForm({ ...subForm, next_billing_date: e.target.value })}
               />
             </div>
+          )}
+
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-foreground py-1">
+              <input
+                type="checkbox"
+                className="rounded border-border text-brand-primary focus:ring-brand-primary h-4 w-4"
+                checked={subForm.auto_generate_invoice}
+                onChange={(e) => setSubForm({ ...subForm, auto_generate_invoice: e.target.checked })}
+              />
+              <span>Automatically generate and issue itemized invoice when billing cycle date arrives</span>
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-muted mb-1">
+              Terms & Support Notes (Visible in Cycle Records)
+            </label>
+            <textarea
+              rows={2}
+              className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary resize-none"
+              placeholder="e.g. 24/7 phone assistance, automated server snapshot retention, monthly maintenance SLA..."
+              value={subForm.notes}
+              onChange={(e) => setSubForm({ ...subForm, notes: e.target.value })}
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-border">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setCreateSubModal(false)}
+              onClick={() => {
+                setCreateSubModal(false);
+                setEditingSubId(null);
+              }}
             >
               Cancel
             </Button>
@@ -1203,7 +1617,7 @@ export function AdminDashboardPage() {
               className="bg-brand-primary text-white"
               disabled={subBusy}
             >
-              {subBusy ? 'Creating…' : 'Create Subscription'}
+              {subBusy ? (editingSubId ? 'Updating…' : 'Creating…') : (editingSubId ? 'Update Schedule' : 'Create Subscription')}
             </Button>
           </div>
         </form>

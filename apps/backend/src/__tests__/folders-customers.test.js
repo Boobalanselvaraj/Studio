@@ -22,8 +22,24 @@ jest.mock('../config/prisma', () => ({
   },
   folder_items: {
     findMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
   albums: {
+    findFirst: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  album_assets: {
+    deleteMany: jest.fn(),
+  },
+  asset_tags: {
+    deleteMany: jest.fn(),
+  },
+  assets: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  storage_providers: {
     findFirst: jest.fn(),
   },
   customers: {
@@ -34,6 +50,7 @@ jest.mock('../config/prisma', () => ({
     upsert: jest.fn(),
   },
 }));
+
 
 jest.mock('../config/rabbitmq', () => ({
   publishToQueue: jest.fn(),
@@ -199,4 +216,56 @@ describe('folder and customer access control', () => {
       can_favorite: false,
     });
   });
+
+  it('permanently bulk deletes selected assets from studio and database', async () => {
+    mockStudioUser('studio_owner');
+    prisma.assets.findMany.mockResolvedValue([
+      { id: 'asset-1', filename: 'DSC001.JPG', original_path: 'storage/studios/test/DSC001.JPG', storage_provider_id: null },
+      { id: 'asset-2', filename: 'DSC002.JPG', original_path: 'storage/studios/test/DSC002.JPG', storage_provider_id: null },
+    ]);
+    prisma.folder_items.deleteMany.mockResolvedValue({ count: 2 });
+    prisma.albums.updateMany.mockResolvedValue({ count: 0 });
+    prisma.album_assets.deleteMany.mockResolvedValue({ count: 2 });
+    prisma.asset_tags.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.assets.deleteMany.mockResolvedValue({ count: 2 });
+
+    const response = await studioRequest('post', '/api/studio/folders/assets/bulk-delete')
+      .send({ asset_ids: ['asset-1', 'asset-2'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.count).toBe(2);
+    expect(prisma.assets.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['asset-1', 'asset-2'] }, studio_id: studioId },
+    });
+  });
+
+  it('permanently deletes provider folder and all contained files', async () => {
+    mockStudioUser('studio_owner');
+    prisma.storage_providers.findFirst.mockResolvedValue({
+      id: 'prov-1',
+      studio_id: studioId,
+      backend: 'local',
+      storage_credentials: null,
+    });
+    prisma.assets.findMany.mockResolvedValue([
+      { id: 'asset-10', filename: 'IMG_01.JPG', object_key: 'weddings/2026/IMG_01.JPG', storage_provider_id: 'prov-1' },
+    ]);
+    prisma.folder_items.deleteMany.mockResolvedValue({ count: 1 });
+    prisma.albums.updateMany.mockResolvedValue({ count: 0 });
+    prisma.album_assets.deleteMany.mockResolvedValue({ count: 1 });
+    prisma.asset_tags.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.assets.deleteMany.mockResolvedValue({ count: 1 });
+
+    const response = await studioRequest('post', '/api/studio/folders/provider-folder/delete')
+      .send({ provider_id: 'prov-1', folder_path: 'weddings/2026' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.deleted_files_count).toBe(1);
+    expect(prisma.assets.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['asset-10'] }, studio_id: studioId },
+    });
+  });
 });
+

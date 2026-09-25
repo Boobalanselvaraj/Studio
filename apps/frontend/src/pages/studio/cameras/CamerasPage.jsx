@@ -286,7 +286,7 @@ export function CamerasPage() {
         description="Register studio cameras, configure Wi-Fi/FTP tethering, and auto-route shots into albums."
       >
         <div className="flex items-center gap-2">
-          <Button
+          {/* <Button
             variant="outline"
             onClick={() => setShowGuide(!showGuide)}
             className="flex items-center gap-1.5"
@@ -294,7 +294,7 @@ export function CamerasPage() {
             <HelpCircle size={15} />
             <span>Tethering Guide</span>
             {showGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </Button>
+          </Button> */}
 
           <Button
             onClick={handleOpenRegister}
@@ -367,7 +367,7 @@ export function CamerasPage() {
           </div>
           <div className="text-base font-semibold font-mono">Port 2022</div>
           <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-            SFTPGo Active
+            Ingest Gateway Active
           </div>
         </div>
       </div>
