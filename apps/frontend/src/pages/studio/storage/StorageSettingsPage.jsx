@@ -24,6 +24,8 @@ import { PageHeading } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
+import { SkeletonProviderCard } from '../../../components/ui/skeleton';
+import { Select } from '../../../components/ui/select';
 
 const blankForm = {
   name: '',
@@ -55,12 +57,31 @@ export function StorageSettingsPage() {
   const [error, setError] = useState('');
   const [deleteProviderModal, setDeleteProviderModal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [storageStats, setStorageStats] = useState({});
+  const [loadingStats, setLoadingStats] = useState({});
+
+  async function loadProviderStats(providerId) {
+    setLoadingStats((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      const stats = await storageApi.getProviderStats(providerId);
+      setStorageStats((prev) => ({ ...prev, [providerId]: stats }));
+    } catch (e) {
+      setStorageStats((prev) => ({ ...prev, [providerId]: { error: e.response?.data?.error || e.message } }));
+    } finally {
+      setLoadingStats((prev) => ({ ...prev, [providerId]: false }));
+    }
+  }
 
   async function load() {
     try {
       setLoading(true);
       const data = await storageApi.getProviders();
-      setItems(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setItems(list);
+      // Auto-fetch storage usage stats for all providers
+      list.forEach((p) => {
+        loadProviderStats(p.id);
+      });
     } catch (e) {
       setError(e.response?.data?.error || e.message || 'Could not load storage connections');
     } finally {
@@ -288,9 +309,9 @@ export function StorageSettingsPage() {
 
       {/* Storage Providers List */}
       {loading ? (
-        <div className="flex justify-center items-center py-20 text-muted">
-          <RefreshCw size={28} className="animate-spin text-brand-primary mr-3" />
-          <span>Scanning storage destinations…</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SkeletonProviderCard />
+          <SkeletonProviderCard />
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state py-16 panel border-dashed">
@@ -412,6 +433,124 @@ export function StorageSettingsPage() {
                       )}
                     </div>
                   )}
+                  {/* Storage Usage Section */}
+                  {(() => {
+                    const stats = storageStats[p.id];
+                    const isLoading = loadingStats[p.id];
+                    const formatBytes = (b) => {
+                      if (b == null) return '—';
+                      if (b === 0) return '0 B';
+                      const k = 1024;
+                      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                      const i = Math.floor(Math.log(b) / Math.log(k));
+                      return (b / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+                    };
+                    const totalBytes =
+                      stats?.total_bytes ||
+                      (p.platform_capacity_gb ? Number(p.platform_capacity_gb) * 1024 * 1024 * 1024 : null);
+                    const freeBytes =
+                      stats?.free_bytes != null
+                        ? stats.free_bytes
+                        : totalBytes && stats?.used_bytes != null
+                        ? Math.max(0, totalBytes - stats.used_bytes)
+                        : null;
+                    const pct =
+                      stats?.used_bytes && totalBytes
+                        ? Math.min(100, Math.round((stats.used_bytes / totalBytes) * 100))
+                        : null;
+
+                    return (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-muted flex items-center gap-1.5">
+                            <HardDrive size={13} /> Storage Usage
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={isLoading}
+                            onClick={() => loadProviderStats(p.id)}
+                            className="text-[11px] h-6 px-2"
+                          >
+                            {isLoading ? (
+                              <RefreshCw size={11} className="animate-spin" />
+                            ) : (
+                              <Activity size={11} />
+                            )}
+                            <span className="ml-1">
+                              {isLoading ? 'Checking…' : stats ? 'Refresh' : 'Check Usage'}
+                            </span>
+                          </Button>
+                        </div>
+
+                        {stats && !stats.error && (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="p-2 bg-surface-2 rounded-lg">
+                                <div className="text-muted text-[10px] mb-0.5">Used</div>
+                                <div className="font-semibold">{formatBytes(stats.used_bytes)}</div>
+                              </div>
+                              <div className="p-2 bg-surface-2 rounded-lg">
+                                <div className="text-muted text-[10px] mb-0.5">
+                                  {totalBytes ? 'Available' : 'Files'}
+                                </div>
+                                <div className="font-semibold">
+                                  {totalBytes
+                                    ? formatBytes(freeBytes)
+                                    : `${stats.file_count?.toLocaleString() || 0} files`}
+                                </div>
+                              </div>
+                            </div>
+
+                            {pct !== null && (
+                              <div>
+                                <div className="flex justify-between text-[10px] text-muted mb-1">
+                                  <span>
+                                    {formatBytes(stats.used_bytes)} used of {formatBytes(totalBytes)}
+                                  </span>
+                                  <span
+                                    className={
+                                      pct > 90
+                                        ? 'text-red-500'
+                                        : pct > 70
+                                        ? 'text-amber-500'
+                                        : 'text-emerald-500'
+                                    }
+                                  >
+                                    {pct}%
+                                  </span>
+                                </div>
+                                <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      pct > 90
+                                        ? 'bg-red-500'
+                                        : pct > 70
+                                        ? 'bg-amber-500'
+                                        : 'bg-emerald-500'
+                                    }`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {stats.file_count != null && pct === null && (
+                              <div className="text-[11px] text-muted">
+                                {stats.file_count.toLocaleString()} files · {formatBytes(stats.used_bytes)} total
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {stats?.error && (
+                          <div className="text-[11px] text-red-500 flex items-center gap-1">
+                            <AlertCircle size={12} /> {stats.error}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-4 mt-3 border-t border-border">
@@ -506,9 +645,9 @@ export function StorageSettingsPage() {
             />
           </label>
 
-          <label>
-            Storage Protocol
-            <select
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">Storage Protocol</label>
+            <Select
               disabled={!!editing}
               value={form.backend}
               onChange={(e) =>
@@ -518,13 +657,14 @@ export function StorageSettingsPage() {
                   port: e.target.value === 'ftp' ? '21' : '22',
                 })
               }
-              className="w-full text-sm bg-surface-1 border border-border rounded-lg px-2.5 py-2"
-            >
-              <option value="sftp">SFTP (SSH File Transfer - Recommended)</option>
-              <option value="s3">Amazon S3 / Wasabi / MinIO (Object Storage)</option>
-              <option value="ftp">Standard FTP</option>
-            </select>
-          </label>
+              searchable={false}
+              options={[
+                { value: 'sftp', label: 'SFTP (SSH File Transfer - Recommended)' },
+                { value: 's3', label: 'Amazon S3 / Wasabi / MinIO (Object Storage)' },
+                { value: 'ftp', label: 'Standard FTP' },
+              ]}
+            />
+          </div>
 
           {form.backend === 's3' ? (
             <div className="space-y-3">

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const billingController = require('../controllers/billingController');
+const subscriptionController = require('../controllers/subscriptionController');
 const { authenticate } = require('../middlewares/auth');
 const { requireSuperAdmin } = require('../middlewares/rbac');
 
@@ -20,6 +21,12 @@ router.patch('/studios/:id/allocations', adminController.updateStudioBilling);
 router.get('/studios/:id/storage-connections', adminController.listStudioStorageConnections);
 router.post('/studios/:id/storage-connections', adminController.provisionPlatformStorage);
 
+// Platform Storage Servers Fleet Management
+router.get('/storage-servers', adminController.listAllStorageServers);
+router.post('/storage-servers', adminController.createStorageServer);
+router.put('/storage-servers/:id', adminController.updateStorageServer);
+router.delete('/storage-servers/:id', adminController.deleteStorageServer);
+
 // Studio Invoices & Audited Manual Payments
 router.get('/invoices', adminController.listAllInvoices);
 router.get('/studios/:id/invoices', adminController.listStudioInvoices);
@@ -28,6 +35,13 @@ router.patch('/studios/:id/invoices/:invoiceId', adminController.updateStudioInv
 router.put('/studios/:id/invoices/:invoiceId', adminController.updateStudioInvoice);
 router.delete('/studios/:id/invoices/:invoiceId', adminController.deleteStudioInvoice);
 router.post('/studios/:id/invoices/:invoiceId/manual-payment', adminController.recordManualPayment);
+
+// Studio Subscriptions & Multi-Cycle Schedules
+router.get('/studios/:id/subscriptions', subscriptionController.listSubscriptions);
+router.post('/studios/:id/subscriptions', subscriptionController.createSubscription);
+router.patch('/studios/:id/subscriptions/:subId', subscriptionController.updateSubscription);
+router.delete('/studios/:id/subscriptions/:subId', subscriptionController.cancelSubscription);
+router.post('/studios/:id/subscriptions/:subId/invoice', subscriptionController.triggerSubscriptionInvoice);
 
 // Studio Allocation Requests & Support Inquiries
 router.all('/allocation-requests*', (req,res)=>res.status(410).json({error:'Allocation requests have been replaced by support tickets. Use /support-tickets.'}));
@@ -44,4 +58,6 @@ const support = require('../controllers/supportController');
 router.get('/support-tickets', support.list);
 router.post('/support-tickets', support.create);
 router.patch('/support-tickets/:id', support.update);
+router.put('/support-tickets/:id', support.update);
+router.delete('/support-tickets/:id', support.remove);
 module.exports = router;

@@ -506,6 +506,111 @@ async function testConnection(provider, overrideCreds = null) {
   }
 }
 
+// -------------------------------------------------------------
+// GET STORAGE USAGE
+// -------------------------------------------------------------
+async function getStorageUsage(provider) {
+  const backend = provider.backend || 'local';
+  const creds = resolveCredentials(provider);
+
+  try {
+    if (backend === 'local') {
+      const root = getLocalRootPath();
+      let totalBytes = 0;
+      let fileCount = 0;
+      const walk = async (dir) => {
+        let entries;
+        try { entries = await fsPromises.readdir(dir, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            await walk(full);
+          } else {
+            try {
+              const stat = await fsPromises.stat(full);
+              totalBytes += stat.size;
+              fileCount++;
+            } catch {}
+          }
+        }
+      };
+      await walk(root);
+      let freeBytes = null;
+      let totalDiskBytes = null;
+      try {
+        if (fsPromises.statfs) {
+          const { blksize, bfree, blocks } = await fsPromises.statfs(root);
+          totalDiskBytes = blksize * blocks;
+          freeBytes = blksize * bfree;
+        }
+      } catch {}
+      return { used_bytes: totalBytes, free_bytes: freeBytes, total_bytes: totalDiskBytes, file_count: fileCount };
+    }
+
+    if (backend === 's3') {
+      const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+      const s3 = getS3Client(creds);
+      const bucket = creds.bucket;
+      let totalBytes = 0;
+      let fileCount = 0;
+      let ContinuationToken;
+      do {
+        const res = await s3.send(new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: creds.prefix || undefined,
+          ContinuationToken,
+          MaxKeys: 1000,
+        }));
+        for (const obj of (res.Contents || [])) {
+          totalBytes += obj.Size || 0;
+          fileCount++;
+        }
+        ContinuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+      } while (ContinuationToken);
+      return { used_bytes: totalBytes, free_bytes: null, total_bytes: null, file_count: fileCount };
+    }
+
+    if (backend === 'sftp') {
+      return await withSFTP(creds, async (sftp) => {
+        const root = creds.root || '/';
+        let totalBytes = 0;
+        let fileCount = 0;
+        const walk = async (dir) => {
+          let list;
+          try { list = await sftp.list(dir); } catch { return; }
+          for (const item of list) {
+            if (item.type === 'd' && item.name !== '.' && item.name !== '..') {
+              await walk(path.posix.join(dir, item.name));
+            } else if (item.type === '-') {
+              totalBytes += item.size || 0;
+              fileCount++;
+            }
+          }
+        };
+        await walk(root);
+        return { used_bytes: totalBytes, free_bytes: null, total_bytes: null, file_count: fileCount };
+      });
+    }
+
+    if (backend === 'ftp') {
+      return await withFTP(creds, async (client) => {
+        const root = creds.root || '/';
+        const list = await client.list(root);
+        let totalBytes = 0;
+        let fileCount = 0;
+        for (const item of list) {
+          if (item.isFile) { totalBytes += item.size || 0; fileCount++; }
+        }
+        return { used_bytes: totalBytes, free_bytes: null, total_bytes: null, file_count: fileCount };
+      });
+    }
+
+    return { used_bytes: null, free_bytes: null, total_bytes: null, file_count: 0 };
+  } catch (err) {
+    return { error: err.message, used_bytes: null, free_bytes: null, total_bytes: null, file_count: 0 };
+  }
+}
+
 module.exports = {
   readObject,
   writeObject,
@@ -513,4 +618,5 @@ module.exports = {
   testConnection,
   validateHostSecurity,
   resolveCredentials,
+  getStorageUsage,
 };

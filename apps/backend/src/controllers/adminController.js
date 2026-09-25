@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 const { checkCameraLimit, checkStorageQuota } = require('../services/allocationService');
-const { encryptStorageCredentials } = require('../config/storage');
+const { encryptStorageCredentials, decryptStorageCredentials } = require('../config/storage');
 
 const VALID_BILLING_STATUSES = new Set(['active', 'past_due', 'suspended', 'comped']);
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -640,14 +640,55 @@ async function provisionPlatformStorage(req, res, next) {
 
 async function listAllStorageServers(req, res, next) {
   try {
-    const servers = await prisma.storage_providers.findMany({
+    const rawServers = await prisma.storage_providers.findMany({
       include: {
         studio: { select: { id: true, name: true, slug: true } },
-        storage_credentials: { select: { id: true, created_at: true } },
+        storage_credentials: true,
         _count: { select: { assets: true, cameras: true } },
       },
       orderBy: { created_at: 'desc' },
     });
+
+    const servers = rawServers.map((srv) => {
+      // Determine if platform managed (superadmin bought & assigned) or studio owned (bought by studio)
+      const isPlatformManaged = srv.provider_type === 'platform';
+      let credentials = null;
+
+      if (srv.storage_credentials?.encrypted_config) {
+        try {
+          const decrypted = decryptStorageCredentials(srv.storage_credentials.encrypted_config);
+          if (isPlatformManaged) {
+            // We bought server and assigned to them: return FULL credentials
+            credentials = {
+              endpoint: decrypted.endpoint || decrypted.host || '',
+              bucket: decrypted.bucket || decrypted.rootPath || '',
+              region: decrypted.region || '',
+              accessKey: decrypted.accessKey || decrypted.username || '',
+              secretKey: decrypted.secretKey || decrypted.password || '',
+            };
+          } else {
+            // Studio-owned server: basic details only (no secret keys/passwords)
+            credentials = {
+              endpoint: decrypted.endpoint || decrypted.host || '',
+              bucket: decrypted.bucket || decrypted.rootPath || '',
+              region: decrypted.region || '',
+            };
+          }
+        } catch (decErr) {
+          console.warn('[StorageServers] Decryption notice for server', srv.id, decErr.message);
+        }
+      }
+
+      return {
+        ...srv,
+        storage_credentials: srv.storage_credentials
+          ? { id: srv.storage_credentials.id, created_at: srv.storage_credentials.created_at }
+          : null,
+        credentials,
+        is_platform_managed: isPlatformManaged,
+      };
+    });
+
     res.json(servers);
   } catch (err) {
     next(err);
@@ -656,7 +697,19 @@ async function listAllStorageServers(req, res, next) {
 
 async function createStorageServer(req, res, next) {
   try {
-    const { studio_id, name, backend = 's3', is_default = false, credentials, provider_type = 'external' } = req.body;
+    const {
+      studio_id,
+      name,
+      backend = 's3',
+      is_default = false,
+      credentials,
+      provider_type = 'platform', // 'platform' (we bought it) or 'studio_owned' (studio bought it)
+      platform_monthly_cost,
+      platform_renewal_period = 'monthly',
+      platform_renewal_date,
+      platform_capacity_gb,
+      platform_notes,
+    } = req.body;
     if (!studio_id || !name || !name.trim()) {
       return res.status(400).json({ error: 'Studio assignment and server name are required' });
     }
@@ -666,21 +719,28 @@ async function createStorageServer(req, res, next) {
       return res.status(404).json({ error: 'Assigned studio not found' });
     }
 
+    const isPlatformManaged = provider_type === 'platform';
+
     const provider = await prisma.$transaction(async (tx) => {
       const p = await tx.storage_providers.create({
         data: {
           studio_id,
           name: name.trim(),
-          provider_type,
+          provider_type: isPlatformManaged ? 'platform' : 'studio_owned',
           backend,
           is_default: !!is_default,
           is_enabled: true,
           health: 'ok',
           tested_at: new Date(),
+          platform_monthly_cost: isPlatformManaged && platform_monthly_cost !== undefined && platform_monthly_cost !== '' ? Number(platform_monthly_cost) : null,
+          platform_renewal_period: isPlatformManaged ? (platform_renewal_period || 'monthly') : null,
+          platform_renewal_date: isPlatformManaged && platform_renewal_date ? new Date(platform_renewal_date) : null,
+          platform_capacity_gb: isPlatformManaged && platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null,
+          platform_notes: isPlatformManaged ? (platform_notes || null) : null,
         },
       });
 
-      if (credentials) {
+      if (credentials && (credentials.endpoint || credentials.bucket || credentials.accessKey || credentials.secretKey)) {
         const encrypted = encryptStorageCredentials(credentials);
         await tx.storage_credentials.create({
           data: {
@@ -702,12 +762,31 @@ async function createStorageServer(req, res, next) {
 async function updateStorageServer(req, res, next) {
   try {
     const { id } = req.params;
-    const { studio_id, name, backend, is_enabled, health, credentials } = req.body;
+    const {
+      studio_id,
+      name,
+      backend,
+      provider_type,
+      is_enabled,
+      health,
+      credentials,
+      platform_monthly_cost,
+      platform_renewal_period,
+      platform_renewal_date,
+      platform_capacity_gb,
+      platform_notes,
+    } = req.body;
 
-    const existing = await prisma.storage_providers.findUnique({ where: { id } });
+    const existing = await prisma.storage_providers.findUnique({
+      where: { id },
+      include: { storage_credentials: true },
+    });
     if (!existing) {
       return res.status(404).json({ error: 'Storage server not found' });
     }
+
+    const nextProviderType = provider_type || existing.provider_type;
+    const isPlatformManaged = nextProviderType === 'platform';
 
     const updated = await prisma.$transaction(async (tx) => {
       const p = await tx.storage_providers.update({
@@ -716,15 +795,43 @@ async function updateStorageServer(req, res, next) {
           studio_id: studio_id || undefined,
           name: name ? name.trim() : undefined,
           backend: backend || undefined,
+          provider_type: nextProviderType,
           is_enabled: is_enabled !== undefined ? !!is_enabled : undefined,
           health: health || undefined,
           tested_at: health ? new Date() : undefined,
+          platform_monthly_cost: isPlatformManaged
+            ? (platform_monthly_cost !== undefined ? (platform_monthly_cost === '' ? null : Number(platform_monthly_cost)) : undefined)
+            : null,
+          platform_renewal_period: isPlatformManaged
+            ? (platform_renewal_period !== undefined ? platform_renewal_period : undefined)
+            : null,
+          platform_renewal_date: isPlatformManaged
+            ? (platform_renewal_date !== undefined ? (platform_renewal_date ? new Date(platform_renewal_date) : null) : undefined)
+            : null,
+          platform_capacity_gb: isPlatformManaged
+            ? (platform_capacity_gb !== undefined ? (platform_capacity_gb ? parseInt(platform_capacity_gb, 10) : null) : undefined)
+            : null,
+          platform_notes: isPlatformManaged
+            ? (platform_notes !== undefined ? platform_notes : undefined)
+            : null,
         },
         include: { studio: { select: { id: true, name: true, slug: true } } },
       });
 
       if (credentials) {
-        const encrypted = encryptStorageCredentials(credentials);
+        let merged = credentials;
+        if (existing.storage_credentials?.encrypted_config) {
+          try {
+            const currentDecrypted = decryptStorageCredentials(existing.storage_credentials.encrypted_config);
+            merged = { ...currentDecrypted, ...credentials };
+            if (!credentials.secretKey && currentDecrypted.secretKey) {
+              merged.secretKey = currentDecrypted.secretKey;
+            }
+          } catch (e) {
+            // keep credentials as is
+          }
+        }
+        const encrypted = encryptStorageCredentials(merged);
         await tx.storage_credentials.upsert({
           where: { storage_provider_id: id },
           update: { encrypted_config: encrypted },

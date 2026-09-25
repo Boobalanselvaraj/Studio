@@ -103,6 +103,7 @@ model studios {
   studio_billing_profile   studio_billing_profile?
   storage_usage_snapshots  storage_usage_snapshots[]
   invoices                 invoices[]
+  billing_subscriptions    billing_subscriptions[]
   billing_adjustments      billing_adjustments[]
   audit_logs               audit_logs[]
 
@@ -194,6 +195,11 @@ model storage_providers {
   health String @default("untested")
   tested_at DateTime? @db.Timestamptz
   version Int @default(1)
+  platform_monthly_cost   Decimal?  @db.Decimal(10, 2)
+  platform_renewal_period String?   @default("monthly") @db.VarChar(20)
+  platform_renewal_date   DateTime? @db.Date
+  platform_capacity_gb    Int?
+  platform_notes          String?   @db.Text
   created_at    DateTime              @default(now()) @db.Timestamptz
 
   studio                  studios                   @relation(fields: [studio_id], references: [id], onDelete: Cascade)
@@ -708,4 +714,32 @@ model support_tickets {
   created_at DateTime @default(now()) @db.Timestamptz
   updated_at DateTime @updatedAt @db.Timestamptz
   @@index([studio_id, status])
+}
+
+model billing_subscriptions {
+  id                    String    @id @default(uuid()) @db.Uuid
+  studio_id             String    @db.Uuid
+  service_type          String    @db.VarChar(50)
+  resource_id           String?   @db.Uuid
+  label                 String    @db.VarChar(255)
+  description           String?   @db.Text
+  unit_price            Decimal   @db.Decimal(10, 2)
+  currency              String    @default("INR") @db.VarChar(10)
+  billing_cycle         String    @default("monthly") @db.VarChar(20)
+  started_at            DateTime  @db.Date
+  current_period_start  DateTime  @db.Date
+  current_period_end    DateTime  @db.Date
+  next_billing_date     DateTime  @db.Date
+  status                String    @default("active") @db.VarChar(20)
+  auto_generate_invoice Boolean   @default(false)
+  last_invoiced_at      DateTime? @db.Date
+  notes                 String?   @db.Text
+  created_at            DateTime  @default(now()) @db.Timestamptz
+  updated_at            DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  studio studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@index([studio_id, status])
+  @@index([next_billing_date, auto_generate_invoice, status])
+  @@map("billing_subscriptions")
 }

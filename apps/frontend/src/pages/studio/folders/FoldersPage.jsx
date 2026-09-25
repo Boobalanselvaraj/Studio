@@ -38,7 +38,7 @@ import {
   CheckCircle2,
   Rocket,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeading, Photo } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
@@ -49,10 +49,19 @@ import { foldersApi, sharesApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
 
 export function FoldersPage() {
+  const [searchParams] = useSearchParams();
   const currentStudio = useAuthStore((s) => s.currentStudio);
 
   // Active view tab: 'folders' | 'tree' | 'live'
   const [activeTab, setActiveTab] = useState('tree');
+
+  useEffect(() => {
+    const cameraId = searchParams.get('cameraId');
+    const tab = searchParams.get('tab');
+    if (tab === 'tree' || cameraId) {
+      setActiveTab('tree');
+    }
+  }, [searchParams]);
 
   // Folders view state
   const [renameAsset,setRenameAsset]=useState(null);
@@ -499,6 +508,7 @@ export function FoldersPage() {
       {/* ========================================================================= */}
       {activeTab === 'tree' && (
         <StorageTreeExplorer
+          initialCameraId={searchParams.get('cameraId')}
           assets={explorerData.assets || []}
           providers={explorerData.providers || []}
           cameras={explorerData.cameras || []}
@@ -940,7 +950,39 @@ export function FoldersPage() {
                 <strong className="text-foreground">{selectedAssetIds.length} file(s)</strong>
               </div>
 
-              <label>Folder collection<select value={targetFolder} onChange={e=>setTargetFolder(e.target.value)}><option value="">Choose folder</option>{allFolders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label><Button type="button" disabled={!targetFolder||assignBusy} onClick={async()=>{try{setAssignBusy(true);await foldersApi.addFolderAssets(targetFolder,selectedAssetIds);toast.success('Added to folder collection');setAssignModalOpen(false);setSelectedAssetIds([]);await loadTree();}catch(e){toast.error(e.response?.data?.error||'Could not add files');}finally{setAssignBusy(false);}}}>Add selected files to collection</Button>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground block">Folder collection</label>
+                <Select
+                  value={targetFolder}
+                  onChange={(e) => setTargetFolder(e.target.value)}
+                  placeholder="Choose folder…"
+                  searchable={allFolders.length >= 7}
+                  options={[
+                    { value: '', label: 'Choose folder…' },
+                    ...allFolders.map((f) => ({ value: f.id, label: `📁 ${f.name}` })),
+                  ]}
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={!targetFolder || assignBusy}
+                onClick={async () => {
+                  try {
+                    setAssignBusy(true);
+                    await foldersApi.addFolderAssets(targetFolder, selectedAssetIds);
+                    toast.success('Added to folder collection');
+                    setAssignModalOpen(false);
+                    setSelectedAssetIds([]);
+                    await loadTree();
+                  } catch (e) {
+                    toast.error(e.response?.data?.error || 'Could not add files');
+                  } finally {
+                    setAssignBusy(false);
+                  }
+                }}
+              >
+                Add selected files to collection
+              </Button>
               {/* Album Selection or Creation */}
               <label className="text-xs font-semibold text-foreground">
                 Shoot Album / Collection

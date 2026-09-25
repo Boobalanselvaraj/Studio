@@ -11,6 +11,8 @@ router.post('/:id/test', requireStudioRole(['studio_owner']), storageController.
 router.post('/providers/:id/test', requireStudioRole(['studio_owner']), storageController.testConnection);
 router.put('/:id', requireStudioRole(['studio_owner']), storageController.update);
 router.put('/providers/:id', requireStudioRole(['studio_owner']), storageController.update);
+router.get('/:id/stats', requireStudioRole(['studio_owner', 'studio_manager']), storageController.getStats);
+router.get('/providers/:id/stats', requireStudioRole(['studio_owner', 'studio_manager']), storageController.getStats);
 router.delete('/:id', requireStudioRole(['studio_owner']), storageController.remove);
 router.delete('/providers/:id', requireStudioRole(['studio_owner']), storageController.remove);
 

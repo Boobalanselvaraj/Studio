@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal } from '../ui/modal';
 import { Button } from '../ui/button';
+import { Select } from '../ui/select';
 import { Plus, ArrowUpRight, Aperture, Loader2 } from 'lucide-react';
 import { useWorkspace } from '../../data/workspace';
 import { eventsApi } from '../../api/services';
@@ -119,12 +120,16 @@ export function NewEventButton({ onCreated }) {
           <div className="form-grid">
             <label>
               Event type
-              <select name="event_type">
-                <option value="wedding">Wedding</option>
-                <option value="portrait">Portrait</option>
-                <option value="corporate">Corporate</option>
-                <option value="commercial">Commercial</option>
-              </select>
+              <Select
+                name="event_type"
+                defaultValue="wedding"
+                options={[
+                  { value: 'wedding', label: 'Wedding' },
+                  { value: 'portrait', label: 'Portrait' },
+                  { value: 'corporate', label: 'Corporate' },
+                  { value: 'commercial', label: 'Commercial' },
+                ]}
+              />
             </label>
             <label>
               Shoot date & time

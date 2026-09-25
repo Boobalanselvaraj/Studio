@@ -24,6 +24,7 @@ const BrandingSettingsPage = lazy(() => import('./pages/studio/branding/Branding
 const BillingPage = lazy(() => import('./pages/studio/billing/BillingPage').then(module => ({ default: module.BillingPage })));
 const AdminDashboardPage = lazy(() => import('./pages/super-admin/AdminDashboardPage').then(module => ({ default: module.AdminDashboardPage })));
 const SupportTicketsPage = lazy(() => import('./pages/super-admin/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
+const StorageServersPage = lazy(() => import('./pages/super-admin/StorageServersPage').then(module => ({ default: module.StorageServersPage })));
 const BillingPlansPage = lazy(() => import('./pages/super-admin/BillingPlansPage').then(module => ({ default: module.BillingPlansPage })));
 const CustomerGalleriesPage = lazy(() => import('./pages/customer/CustomerGalleriesPage').then(module => ({ default: module.CustomerGalleriesPage })));
 const GalleryViewPage = lazy(() => import('./pages/customer/GalleryViewPage').then(module => ({ default: module.GalleryViewPage })));
@@ -80,7 +81,7 @@ export function App() {
             <Route path="/admin" element={<Guard admin><AdminLayout /></Guard>}>
               <Route index element={<Navigate to="/admin/studios" replace />} />
               <Route path="studios" element={<AdminDashboardPage />} />
-              <Route path="storage-servers" element={<Navigate to="/admin/studios" replace />} />
+              <Route path="storage-servers" element={<StorageServersPage />} />
               <Route path="support" element={<SupportTicketsPage />} />
               <Route path="billing-plans" element={<BillingPlansPage />} />
             </Route>

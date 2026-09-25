@@ -39,10 +39,12 @@ import { toast } from '../../../components/ui/toast';
 import { Select } from '../../../components/ui/select';
 import { camerasApi, storageApi } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { SkeletonCameraCard } from '../../../components/ui/skeleton';
 
 
 export function CamerasPage() {
+  const navigate = useNavigate();
   const currentStudio = useAuthStore((s) => s.currentStudio);
 
   const [albums, setAlbums] = useState([]);
@@ -71,11 +73,6 @@ export function CamerasPage() {
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
 
-  // View Photos Modal state
-  const [viewPhotosCamera, setViewPhotosCamera] = useState(null);
-  const [cameraAssets, setCameraAssets] = useState([]);
-  const [loadingAssets, setLoadingAssets] = useState(false);
-
   // Direct Upload Modal state
   const [uploadCamera, setUploadCamera] = useState(null);
   const [uploadingFiles, setUploadingFiles] = useState([]);
@@ -83,19 +80,6 @@ export function CamerasPage() {
   const [uploadSuccessCount, setUploadSuccessCount] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-
-  const handleOpenViewPhotos = async (cam) => {
-    setViewPhotosCamera(cam);
-    setLoadingAssets(true);
-    try {
-      const data = await camerasApi.getAssets(cam.id);
-      setCameraAssets(data.assets || []);
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to load camera photos');
-    } finally {
-      setLoadingAssets(false);
-    }
-  };
 
   const handleOpenUpload = (cam) => {
     setUploadCamera(cam);
@@ -127,9 +111,6 @@ export function CamerasPage() {
     setIsUploading(false);
     toast.success(`Successfully uploaded ${success} photos to ${uploadCamera.name}`);
     loadData();
-    if (viewPhotosCamera?.id === uploadCamera.id) {
-      handleOpenViewPhotos(uploadCamera);
-    }
   };
 
   const loadData = async () => {
@@ -513,9 +494,10 @@ export function CamerasPage() {
       )}
 
       {loading ? (
-        <div className="flex justify-center items-center py-20 text-muted">
-          <Loader2 size={32} className="animate-spin text-brand-primary mr-3" />
-          <span>Loading cameras…</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <SkeletonCameraCard key={i} />
+          ))}
         </div>
       ) : cameras.length === 0 ? (
         <div className="empty-state py-16 panel border-dashed">
@@ -649,33 +631,29 @@ export function CamerasPage() {
                       <span className="text-[10px] text-brand-primary font-medium">Live Route Set</span>
                     )}
                   </div>
-                  <div className="relative">
-                    <select
-                      value={d.album_id || ''}
-                      disabled={d.lifecycle === 'retired'}
-                      onChange={async (e) => {
-                        try {
-                          await api.patch('/studio/cameras/' + d.id + '/album', {
-                            album_id: e.target.value || null,
-                          });
-                          loadData();
-                        } catch (err) {
-                          setError(err.response?.data?.error || 'Could not assign album');
-                        }
-                      }}
-                      className="w-full text-xs bg-surface text-foreground border border-border rounded-lg pl-3 pr-8 py-2 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary font-medium cursor-pointer transition-all hover:border-brand-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">Studio Media Library (Default)</option>
-                      {albums.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          📁 {a.title} {a.is_published ? '(Published)' : '(Draft)'}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-muted">
-                      <ChevronDown size={14} />
-                    </div>
-                  </div>
+                  <Select
+                    value={d.album_id || ''}
+                    disabled={d.lifecycle === 'retired'}
+                    onChange={async (e) => {
+                      try {
+                        await api.patch('/studio/cameras/' + d.id + '/album', {
+                          album_id: e.target.value || null,
+                        });
+                        loadData();
+                      } catch (err) {
+                        setError(err.response?.data?.error || 'Could not assign album');
+                      }
+                    }}
+                    placeholder="Studio Media Library (Default)"
+                    searchable={albums.length >= 7}
+                    options={[
+                      { value: '', label: 'Studio Media Library (Default)' },
+                      ...albums.map((a) => ({
+                        value: a.id,
+                        label: `📁 ${a.title} ${a.is_published ? '(Published)' : '(Draft)'}`,
+                      })),
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -695,7 +673,7 @@ export function CamerasPage() {
                       variant="outline"
                       size="sm"
                       className="text-xs font-semibold h-9 rounded-lg flex items-center justify-center gap-1.5 hover:border-brand-primary/50 hover:text-brand-primary"
-                      onClick={() => handleOpenViewPhotos(d)}
+                      onClick={() => navigate(`/studio/folders?cameraId=${d.id}&tab=tree`)}
                     >
                       <Eye size={14} className="text-brand-primary" />
                       <span>View Photos</span>
@@ -868,21 +846,24 @@ export function CamerasPage() {
             )}
           </label>
 
-          <label>
-            Route Directly to Shoot Album (Optional)
-            <select
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">
+              Route Directly to Shoot Album (Optional)
+            </label>
+            <Select
               value={formAlbum}
               onChange={(e) => setFormAlbum(e.target.value)}
-              className="w-full text-sm bg-surface-1 border border-border rounded-lg px-2.5 py-2"
-            >
-              <option value="">Studio Media Library (Default)</option>
-              {albums.map((a) => (
-                <option key={a.id} value={a.id}>
-                  📁 {a.title}
-                </option>
-              ))}
-            </select>
-          </label>
+              placeholder="Studio Media Library (Default)"
+              searchable={albums.length >= 7}
+              options={[
+                { value: '', label: 'Studio Media Library (Default)' },
+                ...albums.map((a) => ({
+                  value: a.id,
+                  label: `📁 ${a.title}`,
+                })),
+              ]}
+            />
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label>
@@ -1059,124 +1040,7 @@ export function CamerasPage() {
         )}
       </Modal>
 
-      {/* View Camera Uploaded Photos Modal */}
-      <Modal
-        open={!!viewPhotosCamera}
-        onOpenChange={(v) => !v && setViewPhotosCamera(null)}
-        title={`${viewPhotosCamera?.name || 'Camera'} — Uploaded Photos (${cameraAssets.length})`}
-        description={`View and manage all photos ingested by ${viewPhotosCamera?.name}. Destination: ${viewPhotosCamera?.storage_provider?.name || 'Default Storage'}.`}
-      >
-        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-          {/* Header Action Bar inside modal */}
-          <div className="flex items-center justify-between p-3 bg-surface-2 rounded-xl border border-border">
-            <div className="text-xs">
-              <span className="text-muted">Total Ingested:</span>{' '}
-              <strong className="text-foreground">{cameraAssets.length} photos</strong>
-              <span className="text-muted mx-2">•</span>
-              <span className="text-muted">Last sync:</span>{' '}
-              <strong className="text-foreground">
-                {viewPhotosCamera?.last_sync_at
-                  ? new Date(viewPhotosCamera.last_sync_at).toLocaleTimeString()
-                  : 'None yet'}
-              </strong>
-            </div>
 
-            <Button
-              size="sm"
-              className="text-xs bg-brand-primary text-white"
-              onClick={() => handleOpenUpload(viewPhotosCamera)}
-            >
-              <UploadCloud size={14} className="mr-1.5" />
-              Upload Photos Now
-            </Button>
-          </div>
-
-          {loadingAssets ? (
-            <div className="flex justify-center items-center py-16 text-muted">
-              <Loader2 size={24} className="animate-spin text-brand-primary mr-2" />
-              <span className="text-xs">Loading photos from camera storage...</span>
-            </div>
-          ) : cameraAssets.length === 0 ? (
-            <div className="text-center py-12 border border-dashed border-border rounded-xl p-6">
-              <div className="p-3 bg-surface-2 rounded-full inline-block mb-3 text-muted">
-                <FileImage size={32} />
-              </div>
-              <h4 className="text-sm font-semibold mb-1">No Photos Uploaded Yet</h4>
-              <p className="text-xs text-muted max-w-sm mx-auto mb-4">
-                Photos taken on this camera over Wi-Fi, or uploaded directly from your computer or phone, will appear here immediately.
-              </p>
-              <Button
-                size="sm"
-                className="bg-brand-primary text-white text-xs"
-                onClick={() => handleOpenUpload(viewPhotosCamera)}
-              >
-                <UploadCloud size={14} className="mr-1.5" />
-                Upload First Photo
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {cameraAssets.map((asset) => (
-                <div
-                  key={asset.id}
-                  className="group relative rounded-lg overflow-hidden border border-border bg-surface-1 shadow-sm hover:border-brand-primary/50 transition-all flex flex-col"
-                >
-                  <div className="aspect-square bg-surface-muted relative overflow-hidden flex items-center justify-center">
-                    <img
-                      src={asset.url}
-                      alt={asset.filename}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.parentElement.innerHTML = '<div class="flex flex-col items-center justify-center text-muted p-2 text-[10px]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Preview</span></div>';
-                      }}
-                    />
-
-                    {/* Overlay Action on Hover */}
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <a
-                        href={asset.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white text-white hover:text-black transition-colors"
-                        title="View high-res"
-                      >
-                        <Eye size={14} />
-                      </a>
-                      <a
-                        href={`${asset.url}?download=true`}
-                        download={asset.filename}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white text-white hover:text-black transition-colors"
-                        title="Download file"
-                      >
-                        <Download size={14} />
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="p-2 text-[11px] space-y-0.5">
-                    <p className="font-medium truncate" title={asset.filename}>
-                      {asset.filename}
-                    </p>
-                    <div className="flex justify-between text-muted text-[10px]">
-                      <span>
-                        {(Number(asset.file_size_bytes || 0) / (1024 * 1024)).toFixed(1)} MB
-                      </span>
-                      <span>
-                        {new Date(asset.created_at).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>
 
       {/* Direct Wi-Fi & Web Camera Upload Modal */}
       <Modal
@@ -1287,8 +1151,9 @@ export function CamerasPage() {
                 variant="outline"
                 className="text-xs h-7"
                 onClick={() => {
+                  const camId = uploadCamera.id;
                   setUploadCamera(null);
-                  handleOpenViewPhotos(uploadCamera);
+                  navigate(`/studio/folders?cameraId=${camId}&tab=tree`);
                 }}
               >
                 View Uploaded Photos

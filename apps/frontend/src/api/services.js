@@ -283,6 +283,10 @@ export const storageApi = {
     const res = await api.post(`/studio/storage/providers/${id}/test`);
     return res.data;
   },
+  getProviderStats: async (id) => {
+    const res = await api.get(`/studio/storage/providers/${id}/stats`);
+    return res.data;
+  },
 };
 
 export const sharesApi = {
@@ -345,6 +349,10 @@ export const billingApi = {
   },
   getRequests: async () => {
     const res = await api.get('/studio/billing/requests');
+    return res.data;
+  },
+  getSubscriptions: async () => {
+    const res = await api.get('/studio/billing/subscriptions');
     return res.data;
   },
 };
@@ -440,6 +448,27 @@ export const adminApi = {
   },
   deleteStorageServer: async (id) => {
     const res = await api.delete(`/admin/storage-servers/${id}`);
+    return res.data;
+  },
+  // Subscriptions & Recurring multi-cycle schedules
+  listSubscriptions: async (studioId) => {
+    const res = await api.get(`/admin/studios/${studioId}/subscriptions`);
+    return res.data;
+  },
+  createSubscription: async (studioId, data) => {
+    const res = await api.post(`/admin/studios/${studioId}/subscriptions`, data);
+    return res.data;
+  },
+  updateSubscription: async (studioId, subId, data) => {
+    const res = await api.patch(`/admin/studios/${studioId}/subscriptions/${subId}`, data);
+    return res.data;
+  },
+  cancelSubscription: async (studioId, subId) => {
+    const res = await api.delete(`/admin/studios/${studioId}/subscriptions/${subId}`);
+    return res.data;
+  },
+  triggerSubscriptionInvoice: async (studioId, subId) => {
+    const res = await api.post(`/admin/studios/${studioId}/subscriptions/${subId}/invoice`);
     return res.data;
   },
 };

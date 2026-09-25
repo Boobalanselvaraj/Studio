@@ -23,7 +23,11 @@ import {
   RefreshCw,
   AlertCircle,
   ShieldCheck,
+  Calendar,
+  Zap,
+  Clock,
 } from 'lucide-react';
+import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { adminApi } from '../../api/services';
 import { toast } from '../../components/ui/toast';
 
@@ -55,10 +59,31 @@ export function AdminDashboardPage() {
   // Manage studio form state
   const [editStatus, setEditStatus] = useState('active');
 
-
-  // Invoices management state
+  // Invoices & Subscriptions management state
+  const [billingTab, setBillingTab] = useState('invoices');
   const [studioInvoices, setStudioInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [studioSubscriptions, setStudioSubscriptions] = useState([]);
+  const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
+
+  const [deleteInvoiceTarget, setDeleteInvoiceTarget] = useState(null);
+  const [deleteInvoiceLoading, setDeleteInvoiceLoading] = useState(false);
+
+  const [editInvoiceTarget, setEditInvoiceTarget] = useState(null);
+  const [editInvoiceStatus, setEditInvoiceStatus] = useState('issued');
+  const [editInvoiceNotes, setEditInvoiceNotes] = useState('');
+  const [editInvoiceBusy, setEditInvoiceBusy] = useState(false);
+
+  const [createSubModal, setCreateSubModal] = useState(false);
+  const [subForm, setSubForm] = useState({
+    plan_name: 'Studio Pro Tier',
+    interval: 'monthly',
+    amount: 2500,
+    storage_limit_gb: 500,
+    max_cameras: 5,
+  });
+  const [subBusy, setSubBusy] = useState(false);
+
   const [invoiceStatus, setInvoiceStatus] = useState('issued');
   const [invoicePeriodDays, setInvoicePeriodDays] = useState(30);
   const [lineItems, setLineItems] = useState([
@@ -160,18 +185,106 @@ export function AdminDashboardPage() {
   };
 
 
-  // --- Invoicing Handlers ---
+  // --- Invoicing & Subscription Handlers ---
   const openInvoices = async (studio) => {
     setSelectedStudio(studio);
     setInvoicesModal(true);
+    setBillingTab('invoices');
     setLoadingInvoices(true);
+    setLoadingSubscriptions(true);
     try {
-      const invs = await adminApi.listStudioInvoices(studio.id);
-      setStudioInvoices(Array.isArray(invs) ? invs : []);
+      const [invs, subs] = await Promise.allSettled([
+        adminApi.listStudioInvoices(studio.id),
+        adminApi.listSubscriptions(studio.id),
+      ]);
+      if (invs.status === 'fulfilled' && Array.isArray(invs.value)) {
+        setStudioInvoices(invs.value);
+      }
+      if (subs.status === 'fulfilled' && Array.isArray(subs.value)) {
+        setStudioSubscriptions(subs.value);
+      }
     } catch (err) {
-      console.warn('Failed to load studio invoices:', err);
+      console.warn('Failed to load studio invoices/subs:', err);
     } finally {
       setLoadingInvoices(false);
+      setLoadingSubscriptions(false);
+    }
+  };
+
+  const handleDeleteInvoice = async () => {
+    if (!selectedStudio || !deleteInvoiceTarget) return;
+    try {
+      setDeleteInvoiceLoading(true);
+      await adminApi.deleteStudioInvoice(selectedStudio.id, deleteInvoiceTarget.id);
+      setStudioInvoices((prev) => prev.filter((i) => i.id !== deleteInvoiceTarget.id));
+      setDeleteInvoiceTarget(null);
+      toast.success('Invoice deleted successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete invoice');
+    } finally {
+      setDeleteInvoiceLoading(false);
+    }
+  };
+
+  const handleUpdateInvoice = async (e) => {
+    e.preventDefault();
+    if (!selectedStudio || !editInvoiceTarget) return;
+    try {
+      setEditInvoiceBusy(true);
+      const updated = await adminApi.updateStudioInvoice(selectedStudio.id, editInvoiceTarget.id, {
+        status: editInvoiceStatus,
+        notes: editInvoiceNotes,
+      });
+      setStudioInvoices((prev) =>
+        prev.map((inv) => (inv.id === editInvoiceTarget.id ? { ...inv, ...updated } : inv))
+      );
+      setEditInvoiceTarget(null);
+      toast.success('Invoice updated successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update invoice');
+    } finally {
+      setEditInvoiceBusy(false);
+    }
+  };
+
+  const handleCreateSubscription = async (e) => {
+    e.preventDefault();
+    if (!selectedStudio) return;
+    try {
+      setSubBusy(true);
+      const newSub = await adminApi.createSubscription(selectedStudio.id, subForm);
+      setStudioSubscriptions((prev) => [newSub, ...prev]);
+      setCreateSubModal(false);
+      toast.success('Recurring subscription created successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to create subscription');
+    } finally {
+      setSubBusy(false);
+    }
+  };
+
+  const handleCancelSubscription = async (subId) => {
+    if (!selectedStudio) return;
+    try {
+      await adminApi.cancelSubscription(selectedStudio.id, subId);
+      setStudioSubscriptions((prev) =>
+        prev.map((s) => (s.id === subId ? { ...s, status: 'canceled' } : s))
+      );
+      toast.success('Subscription canceled');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to cancel subscription');
+    }
+  };
+
+  const handleTriggerSubInvoice = async (subId) => {
+    if (!selectedStudio) return;
+    try {
+      const inv = await adminApi.triggerSubscriptionInvoice(selectedStudio.id, subId);
+      setStudioInvoices((prev) => [inv, ...prev]);
+      setBillingTab('invoices');
+      toast.success('Next cycle invoice generated successfully!');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to trigger subscription invoice');
     }
   };
 
@@ -299,6 +412,7 @@ export function AdminDashboardPage() {
                   <TableHead className="font-semibold text-xs text-muted">Owner Account</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Status</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Cameras</TableHead>
+                  <TableHead className="font-semibold text-xs text-muted">Customers</TableHead>
                   <TableHead className="font-semibold text-xs text-muted">Connected Servers</TableHead>
                   <TableHead className="font-semibold text-xs text-muted text-right">Management Actions</TableHead>
                 </TableRow>
@@ -308,6 +422,7 @@ export function AdminDashboardPage() {
                   const billingStatus = s.studio_billing_profile?.billing_status || 'active';
                   const owner = s.studio_users?.find((su) => su.role === 'studio_owner')?.user;
                   const reservedCams = s.liveMetrics?.reservedCameras || s._count?.cameras || 0;
+                  const customersCount = s._count?.customers || 0;
                   const serversCount = s._count?.storage_providers || 0;
 
                   return (
@@ -336,6 +451,13 @@ export function AdminDashboardPage() {
                           <span>{reservedCams} Camera{reservedCams === 1 ? '' : 's'}</span>
                         </div>
                         <span className="text-[11px] text-muted block">Registered ingest profiles</span>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <div className="flex items-center gap-1.5 font-medium text-foreground">
+                          <Users size={14} className="text-indigo-500" />
+                          <span>{customersCount} Customer{customersCount === 1 ? '' : 's'}</span>
+                        </div>
+                        <span className="text-[11px] text-muted block">Client accounts</span>
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
@@ -372,7 +494,7 @@ export function AdminDashboardPage() {
 
                 {studios.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-muted text-xs">
+                    <TableCell colSpan={7} className="text-center py-10 text-muted text-xs">
                       No studio tenants registered yet. Click "Provision New Studio" to start.
                     </TableCell>
                   </TableRow>
@@ -582,78 +704,228 @@ export function AdminDashboardPage() {
         </form>
       </Modal>
 
-      {/* Modal: Invoices & Itemized Bill Builder */}
+      {/* Modal: Invoices & Subscriptions Manager */}
       <Modal
         open={invoicesModal}
         onOpenChange={setInvoicesModal}
-        title={`Itemized Invoices & Billing — ${selectedStudio?.name || 'Studio'}`}
-        description="Build custom sales-style itemized bills (software license, dedicated server, cameras, add-ons) and track invoice status."
+        title={`Billing, Invoices & Subscriptions — ${selectedStudio?.name || 'Studio'}`}
+        description="Manage itemized invoices, recurring multi-cycle subscriptions, and financial records."
       >
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted">Studio Invoices</h4>
-            <Button
-              size="sm"
-              onClick={() => setCreateInvoiceModal(true)}
-              className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+        <div className="space-y-4">
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1.5 p-1 bg-surface-muted rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setBillingTab('invoices')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                billingTab === 'invoices'
+                  ? 'bg-brand-primary text-white shadow-sm'
+                  : 'text-muted hover:text-foreground'
+              }`}
             >
-              <Plus size={14} /> Create Itemized Bill
-            </Button>
+              Itemized Invoices ({studioInvoices.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingTab('subscriptions')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                billingTab === 'subscriptions'
+                  ? 'bg-brand-primary text-white shadow-sm'
+                  : 'text-muted hover:text-foreground'
+              }`}
+            >
+              Recurring Subscriptions ({studioSubscriptions.length})
+            </button>
           </div>
 
-          {loadingInvoices ? (
-            <div className="py-8 text-center text-muted text-xs">
-              <Loader2 size={24} className="animate-spin mx-auto mb-2 text-brand-primary" />
-              Loading invoices…
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-              {studioInvoices.map((inv) => (
-                <div key={inv.id} className="p-3.5 rounded-xl border border-border bg-surface-2/40 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-foreground">INV-{inv.id.slice(0, 8).toUpperCase()}</span>
-                      <span className="text-muted ml-2">
-                        {new Date(inv.period_start).toLocaleDateString()} – {new Date(inv.period_end).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-foreground">₹{Number(inv.total_amount).toLocaleString()}</span>
-                      <Badge variant={inv.status === 'paid' ? 'success' : inv.status === 'issued' ? 'primary' : 'secondary'}>
-                        {inv.status}
-                      </Badge>
-                    </div>
-                  </div>
+          {/* TAB 1: INVOICES */}
+          {billingTab === 'invoices' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted">Studio Invoices</h4>
+                <Button
+                  size="sm"
+                  onClick={() => setCreateInvoiceModal(true)}
+                  className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  <Plus size={14} /> Create Itemized Bill
+                </Button>
+              </div>
 
-                  {/* Line Items Preview */}
-                  {Array.isArray(inv.line_items) && inv.line_items.length > 0 && (
-                    <div className="border-t border-border/60 pt-2 space-y-1">
-                      {inv.line_items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between text-[11px] text-muted">
-                          <span>{item.description} (x{item.quantity})</span>
-                          <span className="font-mono">₹{Number(item.amount).toLocaleString()}</span>
+              {loadingInvoices ? (
+                <div className="py-8 text-center text-muted text-xs">
+                  <Loader2 size={24} className="animate-spin mx-auto mb-2 text-brand-primary" />
+                  Loading invoices…
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {studioInvoices.map((inv) => (
+                    <div key={inv.id} className="p-3.5 rounded-xl border border-border bg-surface-2/40 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-foreground">INV-{inv.id.slice(0, 8).toUpperCase()}</span>
+                          <span className="text-muted ml-2">
+                            {new Date(inv.period_start).toLocaleDateString()} – {new Date(inv.period_end).toLocaleDateString()}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-foreground">₹{Number(inv.total_amount).toLocaleString()}</span>
+                          <Badge variant={inv.status === 'paid' ? 'success' : inv.status === 'issued' ? 'primary' : 'secondary'} className="capitalize">
+                            {inv.status}
+                          </Badge>
+                        </div>
+                      </div>
 
-                  {inv.status !== 'paid' && (
-                    <div className="flex justify-end pt-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 text-[11px] text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-                        onClick={() => handleMarkPaid(inv.id)}
-                      >
-                        <Check size={11} /> Mark as Paid
-                      </Button>
+                      {/* Line Items Preview */}
+                      {Array.isArray(inv.line_items) && inv.line_items.length > 0 && (
+                        <div className="border-t border-border/60 pt-2 space-y-1">
+                          {inv.line_items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between text-[11px] text-muted">
+                              <span>{item.description} (x{item.quantity})</span>
+                              <span className="font-mono">₹{Number(item.amount).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {inv.notes && (
+                        <p className="text-[11px] text-muted italic bg-surface-3/50 px-2 py-1 rounded">
+                          {inv.notes}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+                        {inv.status !== 'paid' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[11px] text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                            onClick={() => handleMarkPaid(inv.id)}
+                          >
+                            <Check size={11} /> Mark Paid
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[11px] flex items-center gap-1"
+                          onClick={() => {
+                            setEditInvoiceTarget(inv);
+                            setEditInvoiceStatus(inv.status);
+                            setEditInvoiceNotes(inv.notes || '');
+                          }}
+                        >
+                          <Edit2 size={11} /> Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[11px] text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
+                          onClick={() => setDeleteInvoiceTarget(inv)}
+                          title="Delete this invoice"
+                        >
+                          <Trash2 size={11} />
+                        </Button>
+                      </div>
                     </div>
+                  ))}
+
+                  {studioInvoices.length === 0 && (
+                    <p className="text-center py-6 text-muted text-xs">No invoices created for this studio yet.</p>
                   )}
                 </div>
-              ))}
+              )}
+            </div>
+          )}
 
-              {studioInvoices.length === 0 && (
-                <p className="text-center py-6 text-muted text-xs">No invoices created for this studio yet.</p>
+          {/* TAB 2: RECURRING SUBSCRIPTIONS */}
+          {billingTab === 'subscriptions' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted">Recurring Plans</h4>
+                  <p className="text-[11px] text-muted">Automated billing cycles for this studio</p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setCreateSubModal(true)}
+                  className="flex items-center gap-1.5 text-xs bg-brand-primary text-white"
+                >
+                  <Plus size={14} /> Add Subscription
+                </Button>
+              </div>
+
+              {loadingSubscriptions ? (
+                <div className="py-8 text-center text-muted text-xs">
+                  <Loader2 size={24} className="animate-spin mx-auto mb-2 text-brand-primary" />
+                  Loading subscriptions…
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {studioSubscriptions.map((sub) => (
+                    <div key={sub.id} className="p-3.5 rounded-xl border border-border bg-surface-2/40 space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-foreground text-sm">{sub.plan_name}</span>
+                          <span className="text-muted ml-2 capitalize font-mono text-[11px] bg-surface-3 px-2 py-0.5 rounded border border-border">
+                            {sub.interval}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-foreground">₹{Number(sub.amount).toLocaleString()}</span>
+                          <Badge variant={sub.status === 'active' ? 'success' : 'secondary'} className="capitalize">
+                            {sub.status}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-[11px] py-1.5 px-2.5 rounded-lg bg-surface border border-border/60">
+                        <div>
+                          <span className="block text-muted text-[10px]">Next Billing Date</span>
+                          <strong className="text-foreground">
+                            {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString() : '—'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="block text-muted text-[10px]">Storage Quota</span>
+                          <strong className="text-foreground">{sub.storage_limit_gb || '—'} GB</strong>
+                        </div>
+                        <div>
+                          <span className="block text-muted text-[10px]">Max Cameras</span>
+                          <strong className="text-foreground">{sub.max_cameras || '—'} Cameras</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+                        {sub.status === 'active' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[11px] flex items-center gap-1 text-emerald-600 hover:text-emerald-700"
+                              onClick={() => handleTriggerSubInvoice(sub.id)}
+                              title="Immediately generate itemized invoice for this cycle"
+                            >
+                              <Zap size={11} /> Generate Cycle Invoice
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[11px] text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
+                              onClick={() => handleCancelSubscription(sub.id)}
+                            >
+                              Cancel Plan
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {studioSubscriptions.length === 0 && (
+                    <p className="text-center py-6 text-muted text-xs">No active subscription schedule configured for this studio.</p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -681,18 +953,21 @@ export function AdminDashboardPage() {
                 onChange={(e) => setInvoicePeriodDays(Number(e.target.value))}
               />
             </label>
-            <label className="text-xs font-medium">
-              Initial Invoice Status
-              <select
-                className="w-full text-sm bg-surface border border-border rounded px-3 py-2 mt-1"
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground block">
+                Initial Invoice Status
+              </label>
+              <Select
                 value={invoiceStatus}
                 onChange={(e) => setInvoiceStatus(e.target.value)}
-              >
-                <option value="draft">Draft (Private to Super Admin)</option>
-                <option value="issued">Issued (Sent to Studio)</option>
-                <option value="paid">Paid (Payment Already Collected)</option>
-              </select>
-            </label>
+                searchable={false}
+                options={[
+                  { value: 'draft', label: 'Draft (Private to Super Admin)', status: 'warning' },
+                  { value: 'issued', label: 'Issued (Sent to Studio)', status: 'pending' },
+                  { value: 'paid', label: 'Paid (Payment Already Collected)', status: 'active' },
+                ]}
+              />
+            </div>
           </div>
 
           <div className="space-y-3 mt-2">
@@ -771,6 +1046,180 @@ export function AdminDashboardPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Modal: Edit Invoice Status & Notes */}
+      <Modal
+        open={Boolean(editInvoiceTarget)}
+        onOpenChange={(open) => !open && setEditInvoiceTarget(null)}
+        title={editInvoiceTarget ? `Edit Invoice INV-${editInvoiceTarget.id.slice(0, 8).toUpperCase()}` : 'Edit Invoice'}
+        description="Update status or internal notes for this invoice."
+      >
+        {editInvoiceTarget && (
+          <form onSubmit={handleUpdateInvoice} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Invoice Status
+              </label>
+              <Select
+                value={editInvoiceStatus}
+                onChange={(e) => setEditInvoiceStatus(e.target.value)}
+                searchable={false}
+                options={[
+                  { value: 'draft', label: 'Draft', status: 'warning' },
+                  { value: 'issued', label: 'Issued', status: 'pending' },
+                  { value: 'paid', label: 'Paid', status: 'active' },
+                  { value: 'canceled', label: 'Canceled', status: 'danger' },
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Billing Notes / Terms
+              </label>
+              <textarea
+                className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                rows={3}
+                placeholder="Optional notes or payment instructions..."
+                value={editInvoiceNotes}
+                onChange={(e) => setEditInvoiceNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditInvoiceTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-brand-primary text-white"
+                disabled={editInvoiceBusy}
+              >
+                {editInvoiceBusy ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Modal: Add Recurring Subscription Schedule */}
+      <Modal
+        open={createSubModal}
+        onOpenChange={setCreateSubModal}
+        title={`Add Recurring Subscription — ${selectedStudio?.name || 'Studio'}`}
+        description="Configure a recurring billing plan that auto-cycles (monthly, quarterly, or yearly)."
+      >
+        <form onSubmit={handleCreateSubscription} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-muted mb-1">
+              Plan / Package Name *
+            </label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+              placeholder="e.g. Studio Pro Annual Fleet"
+              value={subForm.plan_name}
+              onChange={(e) => setSubForm({ ...subForm, plan_name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Billing Cycle Interval
+              </label>
+              <Select
+                value={subForm.interval}
+                onChange={(e) => setSubForm({ ...subForm, interval: e.target.value })}
+                searchable={false}
+                options={[
+                  { value: 'monthly', label: 'Monthly (Every 30 Days)' },
+                  { value: 'quarterly', label: 'Quarterly (Every 90 Days)' },
+                  { value: 'yearly', label: 'Yearly (Every 365 Days)' },
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Recurring Price (₹ INR) *
+              </label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                value={subForm.amount}
+                onChange={(e) => setSubForm({ ...subForm, amount: Number(e.target.value) })}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Included Storage (GB)
+              </label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="500"
+                value={subForm.storage_limit_gb}
+                onChange={(e) => setSubForm({ ...subForm, storage_limit_gb: Number(e.target.value) })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">
+                Max Allowed Cameras
+              </label>
+              <input
+                type="number"
+                min={1}
+                className="w-full px-3 py-2 text-xs bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:border-brand-primary"
+                placeholder="5"
+                value={subForm.max_cameras}
+                onChange={(e) => setSubForm({ ...subForm, max_cameras: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateSubModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="bg-brand-primary text-white"
+              disabled={subBusy}
+            >
+              {subBusy ? 'Creating…' : 'Create Subscription'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Confirm Delete Invoice Modal */}
+      <ConfirmModal
+        open={Boolean(deleteInvoiceTarget)}
+        onOpenChange={(open) => !open && setDeleteInvoiceTarget(null)}
+        title="Delete Studio Invoice?"
+        description={`Are you sure you want to permanently delete invoice INV-${deleteInvoiceTarget?.id.slice(0, 8).toUpperCase()}? This will remove all associated line items.`}
+        confirmText="Delete Invoice"
+        variant="danger"
+        loading={deleteInvoiceLoading}
+        onConfirm={handleDeleteInvoice}
+      />
     </div>
   );
 }

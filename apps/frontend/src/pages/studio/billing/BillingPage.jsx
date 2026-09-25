@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Clock,
+  Zap,
 } from 'lucide-react';
 import { PageHeading } from '../../../components/workspace/shared';
 import { Button } from '../../../components/ui/button';
@@ -30,6 +31,7 @@ export function BillingPage() {
   const [profile, setProfile] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [providers, setProviders] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Upgrade modal
@@ -46,17 +48,19 @@ export function BillingPage() {
   const loadBillingData = async () => {
     try {
       setLoading(true);
-      const [uRes, pRes, invRes, provRes] = await Promise.allSettled([
+      const [uRes, pRes, invRes, provRes, subsRes] = await Promise.allSettled([
         billingApi.getUsage(),
         billingApi.getProfile(),
         billingApi.getInvoices(),
         storageApi.getProviders(),
+        billingApi.getSubscriptions(),
       ]);
 
       if (uRes.status === 'fulfilled' && uRes.value) setUsage(uRes.value);
       if (pRes.status === 'fulfilled' && pRes.value) setProfile(pRes.value);
       if (invRes.status === 'fulfilled' && Array.isArray(invRes.value)) setInvoices(invRes.value);
       if (provRes.status === 'fulfilled' && Array.isArray(provRes.value)) setProviders(provRes.value);
+      if (subsRes.status === 'fulfilled' && Array.isArray(subsRes.value)) setSubscriptions(subsRes.value);
     } catch (err) {
       console.warn('Billing load fallback:', err);
     } finally {
@@ -273,6 +277,56 @@ export function BillingPage() {
             </section>
           </div>
 
+          {/* Active Recurring Subscriptions Section (Task 12) */}
+          {subscriptions.length > 0 && (
+            <section className="panel mt-6 p-5 space-y-3">
+              <div className="flex items-center justify-between border-b border-border/80 pb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-500" />
+                  <div>
+                    <h2 className="text-base font-bold text-foreground">Active Recurring Subscription Plans</h2>
+                    <p className="text-xs text-muted">Recurring billing schedules configured for your studio workspace</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {subscriptions.map((sub) => (
+                  <div key={sub.id} className="p-4 rounded-xl bg-surface-2/60 border border-border space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <strong className="text-sm font-semibold text-foreground">{sub.plan_name}</strong>
+                        <span className="capitalize font-mono text-[10px] bg-surface-3 px-2 py-0.5 rounded border border-border">
+                          {sub.interval}
+                        </span>
+                      </div>
+                      <Badge variant={sub.status === 'active' ? 'success' : 'secondary'} className="capitalize">
+                        {sub.status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 py-2 px-3 rounded-lg bg-surface border border-border/60 text-[11px]">
+                      <div>
+                        <span className="text-muted block text-[10px]">Price</span>
+                        <strong className="text-foreground">₹{Number(sub.amount).toLocaleString()}/{sub.interval}</strong>
+                      </div>
+                      <div>
+                        <span className="text-muted block text-[10px]">Next Cycle</span>
+                        <strong className="text-foreground">
+                          {sub.next_billing_date ? new Date(sub.next_billing_date).toLocaleDateString() : '—'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-muted block text-[10px]">Fleet Quotas</span>
+                        <strong className="text-foreground">{sub.storage_limit_gb || '—'} GB · {sub.max_cameras || '—'} Cams</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Official Invoices History Section */}
           <section className="panel mt-6">
             <div className="panel-heading">
@@ -352,11 +406,12 @@ export function BillingPage() {
         </>
       )}
 
-      {/* Modal: View Itemized Invoice Receipt */}
+      {/* Modal: View Itemized Invoice Receipt (Tasks 8 & 12) */}
       {selectedInvoice && (
         <Modal
           open={!!selectedInvoice}
           onOpenChange={(v) => !v && setSelectedInvoice(null)}
+          size="large"
           title={`Invoice INV-${selectedInvoice.id.slice(0, 8).toUpperCase()}`}
           description={`Issued to ${currentStudio?.name || 'Studio'} for the period ${new Date(selectedInvoice.period_start).toLocaleDateString()} – ${new Date(selectedInvoice.period_end).toLocaleDateString()}`}
         >
@@ -364,7 +419,7 @@ export function BillingPage() {
             <div className="flex items-center justify-between p-3 rounded-xl bg-surface-2 text-xs">
               <div>
                 <span className="text-muted block text-[11px]">Invoice Status</span>
-                <Badge variant={selectedInvoice.status === 'paid' ? 'success' : 'primary'}>
+                <Badge variant={selectedInvoice.status === 'paid' ? 'success' : 'primary'} className="capitalize">
                   {selectedInvoice.status.toUpperCase()}
                 </Badge>
               </div>
@@ -376,11 +431,53 @@ export function BillingPage() {
               </div>
             </div>
 
+            {/* If invoice has server/storage line item, show assigned server card (Task 8) */}
+            {(() => {
+              const hasServerItem = Array.isArray(selectedInvoice.line_items) && selectedInvoice.line_items.some(
+                (item) => item.category === 'Dedicated Server' ||
+                  item.description?.toLowerCase().includes('server') ||
+                  item.description?.toLowerCase().includes('storage')
+              );
+              if (hasServerItem && assignedServer) {
+                return (
+                  <div className="p-3.5 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Server size={15} className="text-blue-500" />
+                        <span className="font-semibold text-foreground">Assigned Dedicated Storage Server</span>
+                      </div>
+                      <Badge variant="secondary" className="uppercase font-mono text-[10px]">
+                        {assignedServer.backend}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-muted pt-1">
+                      <div>
+                        <span>Server Node: </span>
+                        <strong className="text-foreground">{assignedServer.name}</strong>
+                      </div>
+                      <div>
+                        <span>Status: </span>
+                        <span className="text-emerald-500 font-medium">Online & Verified</span>
+                      </div>
+                      <div>
+                        <span>Capacity: </span>
+                        <strong className="text-foreground">
+                          {assignedServer.platform_capacity_gb ? `${assignedServer.platform_capacity_gb} GB` : 'Custom Dedicated'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             <div className="border border-border rounded-xl overflow-hidden">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Item Description</th>
+                    <th>Category</th>
                     <th>Qty</th>
                     <th className="text-right">Amount</th>
                   </tr>
@@ -391,7 +488,11 @@ export function BillingPage() {
                       <tr key={idx}>
                         <td className="text-xs">
                           <strong>{item.description}</strong>
-                          {item.category && <span className="text-muted text-[10px] block">{item.category}</span>}
+                        </td>
+                        <td className="text-xs">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-surface-2 text-muted">
+                            {item.category || 'Service'}
+                          </span>
                         </td>
                         <td className="text-xs font-mono">{item.quantity || 1}</td>
                         <td className="text-right text-xs font-mono font-semibold">
@@ -401,7 +502,7 @@ export function BillingPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={3} className="text-center py-4 text-xs text-muted">
+                      <td colSpan={4} className="text-center py-4 text-xs text-muted">
                         Standard Studio Monthly Services
                       </td>
                     </tr>
@@ -409,6 +510,13 @@ export function BillingPage() {
                 </tbody>
               </table>
             </div>
+
+            {selectedInvoice.notes && (
+              <div className="p-3 bg-surface-2 rounded-xl border border-border text-xs text-muted">
+                <span className="font-semibold block text-foreground mb-0.5">Notes / Terms:</span>
+                {selectedInvoice.notes}
+              </div>
+            )}
 
             <div className="flex justify-end pt-2">
               <Button onClick={() => setSelectedInvoice(null)}>Close Statement</Button>

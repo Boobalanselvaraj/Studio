@@ -66,4 +66,6 @@ const support = require('../controllers/supportController');
 router.get('/support-tickets', support.list);
 router.post('/support-tickets', support.create);
 router.patch('/support-tickets/:id', support.update);
+router.put('/support-tickets/:id', support.update);
+router.delete('/support-tickets/:id', support.remove);
 module.exports = router;

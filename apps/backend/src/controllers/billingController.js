@@ -143,6 +143,18 @@ async function getAllocationRequests(req, res, next) {
   }
 }
 
+async function getSubscriptions(req, res, next) {
+  try {
+    const subs = await prisma.billing_subscriptions.findMany({
+      where: { studio_id: req.studioId, status: { not: 'cancelled' } },
+      orderBy: { started_at: 'asc' },
+    });
+    res.json(subs);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getUsage,
   getProfile,
@@ -150,4 +162,5 @@ module.exports = {
   getPlans,
   requestUpgrade,
   getAllocationRequests,
+  getSubscriptions,
 };

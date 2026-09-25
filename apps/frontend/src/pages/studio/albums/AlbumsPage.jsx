@@ -42,6 +42,7 @@ import { Modal } from '../../../components/ui/modal';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
 import { toast } from '../../../components/ui/toast';
 import { Select } from '../../../components/ui/select';
+import { SkeletonAlbumCard } from '../../../components/ui/skeleton';
 import { albumsApi, foldersApi, customersApi, sharesApi, triggerFileDownload } from '../../../api/services';
 import { useAuthStore } from '../../../stores/authStore';
 
@@ -420,7 +421,7 @@ export function AlbumsPage() {
   };
 
   return (
-    <div className="page-enter space-y-6">
+    <div className="page-enter space-y-4 max-w-none">
       <PageHeading
         eyebrow="CLIENT PROOFING & SHOWCASES"
         title="Albums & Client Galleries"
@@ -457,24 +458,24 @@ export function AlbumsPage() {
 
       {/* Stats Summary Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="panel p-4 space-y-1">
+        <div className="panel p-3 space-y-1">
           <p className="text-xs text-muted">Total Collections</p>
           <h3 className="text-2xl font-bold text-foreground">{albums.length}</h3>
           <p className="text-[11px] text-muted">Curated shoot sets</p>
         </div>
-        <div className="panel p-4 space-y-1">
+        <div className="panel p-3 space-y-1">
           <p className="text-xs text-muted">Published to Clients</p>
           <h3 className="text-2xl font-bold text-emerald-600">
             {albums.filter((a) => a.is_published).length}
           </h3>
           <p className="text-[11px] text-muted">Active client portals</p>
         </div>
-        <div className="panel p-4 space-y-1">
+        <div className="panel p-3 space-y-1">
           <p className="text-xs text-muted">Private Client Accounts</p>
           <h3 className="text-2xl font-bold text-indigo-600">{customers.length}</h3>
           <p className="text-[11px] text-muted">Registered studio clients</p>
         </div>
-        <div className="panel p-4 space-y-1">
+        <div className="panel p-3 space-y-1">
           <p className="text-xs text-muted">Draft / Unlisted</p>
           <h3 className="text-2xl font-bold text-amber-500">
             {albums.filter((a) => !a.is_published).length}
@@ -539,9 +540,10 @@ export function AlbumsPage() {
 
       {/* Albums Grid */}
       {loading ? (
-        <div className="py-20 text-center text-muted flex items-center justify-center gap-2">
-          <Loader2 size={24} className="animate-spin text-brand-primary" />
-          <span>Loading studio albums…</span>
+        <div className="album-editorial-grid">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <SkeletonAlbumCard key={i} />
+          ))}
         </div>
       ) : filteredAlbums.length === 0 ? (
         <div className="panel p-12 text-center space-y-3">
@@ -1294,8 +1296,10 @@ export function AlbumsPage() {
           {/* TAB 1: PRIVATE CLIENT ACCOUNT ACCESS */}
           {shareTab === 'private' && (
             <form onSubmit={handleGrantPrivateAccess} className="space-y-4 pt-1">
-              <label className="text-xs font-semibold text-foreground">
-                Select Registered Client *
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground block">
+                  Select Registered Client *
+                </label>
                 <Select
                   value={selectedCustomerId}
                   onChange={(e) => setSelectedCustomerId(e.target.value)}
@@ -1308,7 +1312,7 @@ export function AlbumsPage() {
                     })),
                   ]}
                 />
-              </label>
+              </div>
 
               <div className="p-3 bg-surface-muted rounded-xl border border-border space-y-2">
                 <p className="text-xs font-semibold text-foreground">Client Permissions</p>
@@ -1354,12 +1358,15 @@ export function AlbumsPage() {
           {/* TAB 2: EXPIRING TOKEN-BASED GUEST LINK */}
           {shareTab === 'token' && (
             <div className="space-y-4 pt-1">
-              <label className="text-xs font-semibold text-foreground">
-                Link Expiration Window
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground block">
+                  Link Expiration Window
+                </label>
                 <Select
                   value={String(tokenExpiresHours)}
                   onChange={(e) => setTokenExpiresHours(Number(e.target.value))}
                   disabled={!!generatedGuestUrl}
+                  searchable={false}
                   options={[
                     { value: '24', label: '24 Hours (1 Day - Quick Review)' },
                     { value: '72', label: '72 Hours (3 Days - Weekend Proofing)' },
@@ -1367,7 +1374,7 @@ export function AlbumsPage() {
                     { value: '720', label: '30 Days (1 Month - Full Project Window)' },
                   ]}
                 />
-              </label>
+              </div>
 
               {generatedGuestUrl ? (
                 <div className="space-y-3 p-3 bg-surface-muted rounded-xl border border-border">

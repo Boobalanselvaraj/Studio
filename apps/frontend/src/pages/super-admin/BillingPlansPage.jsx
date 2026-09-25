@@ -340,29 +340,29 @@ export function BillingPlansPage() {
             />
           </label>
 
-          <select
+          <Select
             value={selectedStudioFilter}
             onChange={(e) => setSelectedStudioFilter(e.target.value)}
-            className="text-xs bg-surface-2 border border-border rounded-lg px-2.5 py-1.5"
-          >
-            <option value="all">All Studios</option>
-            {studios.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            searchable={studios.length >= 7}
+            className="w-48 text-xs"
+            options={[
+              { value: 'all', label: 'All Studios' },
+              ...studios.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
 
-          <select
+          <Select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="text-xs bg-surface-2 border border-border rounded-lg px-2.5 py-1.5"
-          >
-            <option value="all">All Statuses</option>
-            <option value="paid">Paid</option>
-            <option value="issued">Issued</option>
-            <option value="draft">Draft</option>
-          </select>
+            searchable={false}
+            className="w-36 text-xs"
+            options={[
+              { value: 'all', label: 'All Statuses' },
+              { value: 'paid', label: 'Paid', status: 'active' },
+              { value: 'issued', label: 'Issued', status: 'pending' },
+              { value: 'draft', label: 'Draft', status: 'warning' },
+            ]}
+          />
         </div>
 
         <span className="text-xs text-muted">
@@ -521,21 +521,19 @@ export function BillingPlansPage() {
         <form onSubmit={handleCreateInvoice} className="form-stack space-y-3">
           {error && <p className="form-error">{error}</p>}
 
-          <label>
-            Target Studio
-            <select
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">Target Studio *</label>
+            <Select
               value={targetStudioId}
               onChange={(e) => setTargetStudioId(e.target.value)}
-              required
-              className="w-full text-sm bg-surface-1 border border-border rounded-lg px-2.5 py-2"
-            >
-              {studios.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.slug})
-                </option>
-              ))}
-            </select>
-          </label>
+              placeholder="Select Studio..."
+              searchable={studios.length >= 7}
+              options={studios.map((s) => ({
+                value: s.id,
+                label: `🏢 ${s.name} (${s.slug})`,
+              }))}
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <label>
@@ -549,18 +547,19 @@ export function BillingPlansPage() {
               />
             </label>
 
-            <label>
-              Initial Status
-              <select
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground block">Initial Status</label>
+              <Select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value)}
-                className="w-full text-sm bg-surface-1 border border-border rounded-lg px-2.5 py-2"
-              >
-                <option value="issued">Issued / Sent</option>
-                <option value="draft">Draft</option>
-                <option value="paid">Paid</option>
-              </select>
-            </label>
+                searchable={false}
+                options={[
+                  { value: 'issued', label: 'Issued / Sent', status: 'pending' },
+                  { value: 'draft', label: 'Draft', status: 'warning' },
+                  { value: 'paid', label: 'Paid', status: 'active' },
+                ]}
+              />
+            </div>
           </div>
 
           <div>
@@ -701,19 +700,20 @@ export function BillingPlansPage() {
         <form onSubmit={handleUpdateStatus} className="form-stack space-y-3">
           {error && <p className="form-error">{error}</p>}
 
-          <label>
-            Payment Status
-            <select
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground block">Payment Status</label>
+            <Select
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value)}
-              className="w-full text-sm bg-surface-1 border border-border rounded-lg px-2.5 py-2"
-            >
-              <option value="issued">Issued / Unpaid</option>
-              <option value="paid">Paid</option>
-              <option value="draft">Draft</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
+              searchable={false}
+              options={[
+                { value: 'issued', label: 'Issued / Unpaid', status: 'pending' },
+                { value: 'paid', label: 'Paid', status: 'active' },
+                { value: 'draft', label: 'Draft', status: 'warning' },
+                { value: 'cancelled', label: 'Cancelled', status: 'danger' },
+              ]}
+            />
+          </div>
 
           <div className="modal-actions pt-3 border-t border-border">
             <Button

@@ -434,15 +434,17 @@ export function CustomersPage() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
+          <Select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="text-xs bg-surface-2 px-3 py-1.5 rounded-lg border border-border text-foreground"
-          >
-            <option value="all">All Clients ({customers.length})</option>
-            <option value="with_galleries">With Shared Galleries</option>
-            <option value="unassigned">No Galleries Assigned</option>
-          </select>
+            searchable={false}
+            className="w-52 text-xs"
+            options={[
+              { value: 'all', label: `All Clients (${customers.length})` },
+              { value: 'with_galleries', label: 'With Shared Galleries' },
+              { value: 'unassigned', label: 'No Galleries Assigned' },
+            ]}
+          />
         </div>
       </div>
 

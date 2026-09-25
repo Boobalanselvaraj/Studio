@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { encryptStorageCredentials, decryptStorageCredentials } = require('../config/storage');
-const { testConnection: probeStorage } = require('../services/storageAdapters');
+const { testConnection: probeStorage, getStorageUsage } = require('../services/storageAdapters');
 
 const VALID_STUDIO_BACKENDS = new Set(['s3', 'sftp', 'ftp']);
 
@@ -30,6 +30,11 @@ function formatProviderDTO(p) {
       return safe;
     })(),
     created_at: p.created_at,
+    platform_capacity_gb: p.platform_capacity_gb || null,
+    platform_monthly_cost: p.platform_monthly_cost || null,
+    platform_renewal_date: p.platform_renewal_date || null,
+    platform_renewal_period: p.platform_renewal_period || null,
+    platform_notes: p.platform_notes || null,
   };
 }
 
@@ -266,10 +271,43 @@ async function remove(req, res, next) {
   }
 }
 
+async function getStats(req, res, next) {
+  try {
+    const where = { id: req.params.id };
+    if (req.studioId) where.studio_id = req.studioId;
+
+    const provider = await prisma.storage_providers.findFirst({
+      where,
+      include: { storage_credentials: true },
+    });
+    if (!provider) return res.status(404).json({ error: 'Storage provider not found' });
+    const stats = await getStorageUsage(provider);
+    let totalBytes = stats.total_bytes;
+    let freeBytes = stats.free_bytes;
+
+    if ((totalBytes == null || totalBytes === 0) && provider.platform_capacity_gb) {
+      totalBytes = Number(provider.platform_capacity_gb) * 1024 * 1024 * 1024;
+      const used = stats.used_bytes || 0;
+      freeBytes = totalBytes > used ? totalBytes - used : 0;
+    }
+
+    res.json({
+      provider_id: provider.id,
+      platform_capacity_gb: provider.platform_capacity_gb || null,
+      ...stats,
+      total_bytes: totalBytes,
+      free_bytes: freeBytes,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   create,
   testConnection,
   update,
   remove,
+  getStats,
 };

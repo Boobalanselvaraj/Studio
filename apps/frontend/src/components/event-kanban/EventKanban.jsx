@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, CheckCheck, GripVertical } from 'lucide-react';
+import { Select } from '../ui/select';
 import { statuses, transitions, formatDate } from '../../data/workspace';
 
 export function EventKanban({ events = [], onStatusChange }) {
@@ -122,19 +123,21 @@ export function EventKanban({ events = [], onStatusChange }) {
                       </div>
 
                       {allowedNext.length > 0 && onStatusChange && (
-                        <select
-                          className="status-select"
-                          aria-label={`Change status for ${e.title}`}
-                          value={e.status}
-                          onChange={(ev) => move(e.id, ev.target.value)}
-                        >
-                          <option value={e.status}>{e.status}</option>
-                          {allowedNext.map((s) => (
-                            <option value={s} key={s}>
-                              Move to {s}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="mt-2">
+                          <Select
+                            className="text-xs"
+                            aria-label={`Change status for ${e.title}`}
+                            value={e.status}
+                            onChange={(ev) => move(e.id, ev.target.value)}
+                            options={[
+                              { value: e.status, label: e.status },
+                              ...allowedNext.map((s) => ({
+                                value: s,
+                                label: `Move to ${s}`,
+                              })),
+                            ]}
+                          />
+                        </div>
                       )}
                     </article>
                   );

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider';
 import { Modal } from '../components/ui/modal';
+import { Select } from '../components/ui/select';
 import { useAuthStore } from '../stores/authStore';
 import { studioApi, eventsApi } from '../api/services';
 import { applyBrandColor } from '../theme/brandColor';
@@ -175,21 +176,21 @@ export function StudioLayout() {
             <span>{currentStudio?.role ? currentStudio.role.replace('_', ' ') : 'Photography workspace'}</span>
           </div>
           {studios && studios.length > 1 && (
-            <select
-              aria-label="Switch studio"
-              value={currentStudio?.id || ''}
-              onChange={(e) => {
-                const selected = studios.find((s) => s.id === e.target.value);
-                if (selected) setCurrentStudio(selected);
-              }}
-              className="text-xs bg-surface-2 border border-border rounded px-1 py-0.5"
-            >
-              {studios.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-28 min-w-[100px] shrink-0">
+              <Select
+                aria-label="Switch studio"
+                value={currentStudio?.id || ''}
+                onChange={(e) => {
+                  const selected = studios.find((s) => s.id === e.target.value);
+                  if (selected) setCurrentStudio(selected);
+                }}
+                className="text-xs py-1"
+                options={studios.map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                }))}
+              />
+            </div>
           )}
           {(!studios || studios.length <= 1) && <span className="plan-tag">LIVE</span>}
         </div>

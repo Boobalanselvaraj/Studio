@@ -21,6 +21,7 @@ import { Button } from '../../../components/ui/button';
 import { Modal } from '../../../components/ui/modal';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
 import { toast } from '../../../components/ui/toast';
+import { Select } from '../../../components/ui/select';
 import { eventsApi } from '../../../api/services';
 
 export function EventDetailPage() {
@@ -261,19 +262,20 @@ export function EventDetailPage() {
         </Button>
 
         {allowedTransitions.length > 0 && (
-          <select
+          <Select
             aria-label="Update event status"
             value={event.status}
             onChange={(e) => handleStatusSelect(e.target.value)}
-            className="text-xs bg-surface border border-border rounded px-2 py-1"
-          >
-            <option value={event.status}>Current: {event.status}</option>
-            {allowedTransitions.map((s) => (
-              <option key={s} value={s}>
-                Transition to {s}
-              </option>
-            ))}
-          </select>
+            searchable={false}
+            className="w-48 text-xs"
+            options={[
+              { value: event.status, label: `Current: ${event.status}` },
+              ...allowedTransitions.map((s) => ({
+                value: s,
+                label: `Transition to ${s}`,
+              })),
+            ]}
+          />
         )}
       </PageHeading>
 
@@ -487,22 +489,23 @@ export function EventDetailPage() {
           </label>
 
           <div className="form-grid">
-            <label>
-              Shoot Type
-              <select
-                className="w-full text-sm bg-surface border border-border rounded px-3 py-2"
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-foreground block">Shoot Type</label>
+              <Select
                 value={editType}
                 onChange={(e) => setEditType(e.target.value)}
-              >
-                <option value="wedding">Wedding</option>
-                <option value="portrait">Portrait</option>
-                <option value="corporate">Corporate</option>
-                <option value="event">Event / Party</option>
-                <option value="product">Product</option>
-                <option value="family">Family</option>
-                <option value="fashion">Fashion</option>
-              </select>
-            </label>
+                searchable={false}
+                options={[
+                  { value: 'wedding', label: 'Wedding' },
+                  { value: 'portrait', label: 'Portrait' },
+                  { value: 'corporate', label: 'Corporate' },
+                  { value: 'event', label: 'Event / Party' },
+                  { value: 'product', label: 'Product' },
+                  { value: 'family', label: 'Family' },
+                  { value: 'fashion', label: 'Fashion' },
+                ]}
+              />
+            </div>
 
             <label>
               Shoot Date & Time

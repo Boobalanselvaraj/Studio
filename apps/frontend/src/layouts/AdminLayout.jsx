@@ -83,6 +83,7 @@ export function AdminLayout() {
         <nav aria-label="Administration">
           {[
             ['Studios & Tenants', '/admin/studios', Building2],
+            ['Storage Servers', '/admin/storage-servers', HardDrive],
             ['Support & Requests', '/admin/support', LifeBuoy],
             ['Billing & Invoices', '/admin/billing-plans', Receipt],
           ].map(([name, path, Icon]) => (
@@ -98,18 +99,6 @@ export function AdminLayout() {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="storage-mini">
-            <div>
-              <Building2 size={15} />
-              <strong>Tenant Workspace</strong>
-            </div>
-            <p className="text-xs text-muted">Quick jump to studio management mode.</p>
-            <Link to="/studio/dashboard">
-              Studio workspace
-              <ArrowUpRight size={14} />
-            </Link>
-          </div>
-
           <div className="sidebar-account">
             <span className="account-avatar">{getInitials(user?.full_name)}</span>
             <div className="flex-1 overflow-hidden">

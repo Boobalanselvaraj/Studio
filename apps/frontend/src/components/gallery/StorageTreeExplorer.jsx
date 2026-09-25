@@ -28,8 +28,12 @@ import {
   FolderPlus,
   UserCheck,
   CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { Select } from '../ui/select';
+import { ConfirmModal } from '../ui/ConfirmModal';
+import { foldersApi } from '../../api/services';
 import { mediaUrl, MediaViewer } from './MediaBrowser';
 
 // Helper to format bytes into readable sizes
@@ -64,6 +68,7 @@ export function StorageTreeExplorer({
   cameras = [],
   albums = [],
   folders = [],
+  initialCameraId = null,
   selectedIds = [],
   onSelectId,
   onSelectMultiple,
@@ -104,6 +109,28 @@ export function StorageTreeExplorer({
   const [page, setPage] = useState(1);
   const [lightboxAsset, setLightboxAsset] = useState(null);
   const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
+
+  // Deletion modals state
+  const [deleteAssetModal, setDeleteAssetModal] = useState(null);
+  const [deletingAsset, setDeletingAsset] = useState(false);
+  const [deleteFolderModal, setDeleteFolderModal] = useState(null);
+  const [deletingFolder, setDeletingFolder] = useState(false);
+
+  // React to initialCameraId if passed
+  useEffect(() => {
+    if (initialCameraId && cameras.length > 0) {
+      const cam = cameras.find((c) => c.id === initialCameraId);
+      if (cam) {
+        setActiveNode({
+          type: 'camera',
+          id: cam.id,
+          name: cam.name,
+        });
+        setExpandedSections((prev) => ({ ...prev, cameras: true }));
+        setExpandedFolders((prev) => ({ ...prev, [`cam_root_${cam.id}`]: true }));
+      }
+    }
+  }, [initialCameraId, cameras]);
 
   // Toggle folder expansion
   const toggleFolderExpand = (folderKey, e) => {
@@ -690,7 +717,7 @@ export function StorageTreeExplorer({
                             name: f.name,
                           })
                         }
-                        className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer text-xs transition-colors ${
+                        className={`group/folder flex items-center justify-between p-1.5 rounded-lg cursor-pointer text-xs transition-colors ${
                           isActive
                             ? 'bg-amber-500/10 text-amber-500 font-bold border border-amber-500/30'
                             : 'text-foreground hover:bg-surface'
@@ -700,9 +727,22 @@ export function StorageTreeExplorer({
                           <Folder size={13} className="text-amber-400 shrink-0" />
                           <span className="truncate">{f.name}</span>
                         </div>
-                        <span className="text-[10px] bg-surface-muted px-1.5 py-0.5 rounded text-muted font-mono shrink-0">
-                          {count}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] bg-surface-muted px-1.5 py-0.5 rounded text-muted font-mono">
+                            {count}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteFolderModal(f);
+                            }}
+                            className="opacity-0 group-hover/folder:opacity-100 p-0.5 rounded text-muted hover:text-red-500 transition-opacity"
+                            title="Delete folder"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -846,18 +886,21 @@ export function StorageTreeExplorer({
             </div>
 
             {/* Sort Dropdown */}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="text-xs py-1.5 px-2.5 bg-surface rounded-lg border border-border text-foreground font-medium"
-            >
-              <option value="date_desc">Newest First</option>
-              <option value="date_asc">Oldest First</option>
-              <option value="name_asc">Name (A–Z)</option>
-              <option value="name_desc">Name (Z–A)</option>
-              <option value="size_desc">Largest Size</option>
-              <option value="size_asc">Smallest Size</option>
-            </select>
+            <div className="w-36">
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="text-xs"
+                options={[
+                  { value: 'date_desc', label: 'Newest First' },
+                  { value: 'date_asc', label: 'Oldest First' },
+                  { value: 'name_asc', label: 'Name (A–Z)' },
+                  { value: 'name_desc', label: 'Name (Z–A)' },
+                  { value: 'size_desc', label: 'Largest Size' },
+                  { value: 'size_asc', label: 'Smallest Size' },
+                ]}
+              />
+            </div>
 
             {/* View Mode Toggle (Grid vs FileZilla Table) */}
             <div className="flex items-center bg-surface p-1 rounded-lg border border-border">
@@ -952,6 +995,19 @@ export function StorageTreeExplorer({
                             {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
                           </span>
                         </div>
+
+                        {/* Hover Delete Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteAssetModal(asset);
+                          }}
+                          className="absolute top-2 right-8 p-1 rounded-md bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-10"
+                          title="Delete file"
+                        >
+                          <Trash2 size={12} />
+                        </button>
 
                         {/* Hover Quick Lightbox Preview */}
                         <button
@@ -1078,6 +1134,17 @@ export function StorageTreeExplorer({
                                 title="Preview"
                               >
                                 <Eye size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteAssetModal(asset);
+                                }}
+                                className="p-1 rounded hover:bg-surface text-muted hover:text-red-500"
+                                title="Delete file"
+                              >
+                                <Trash2 size={13} />
                               </button>
                               {canDownload && (
                                 <a
@@ -1245,6 +1312,52 @@ export function StorageTreeExplorer({
         assets={filteredAndSortedAssets}
         selected={lightboxAsset}
         onClose={() => setLightboxAsset(null)}
+      />
+
+      {/* Delete Asset Confirm Modal */}
+      <ConfirmModal
+        open={Boolean(deleteAssetModal)}
+        onOpenChange={(v) => !v && setDeleteAssetModal(null)}
+        title={`Delete "${deleteAssetModal?.filename}"?`}
+        description="This will permanently remove this file from your studio library and storage destination. This action cannot be undone."
+        confirmText="Delete File"
+        variant="danger"
+        loading={deletingAsset}
+        onConfirm={async () => {
+          setDeletingAsset(true);
+          try {
+            await foldersApi.deleteAsset(deleteAssetModal.id);
+            setDeleteAssetModal(null);
+            onRefresh?.();
+          } catch (err) {
+            console.error('Failed to delete asset:', err);
+          } finally {
+            setDeletingAsset(false);
+          }
+        }}
+      />
+
+      {/* Delete Folder Confirm Modal */}
+      <ConfirmModal
+        open={Boolean(deleteFolderModal)}
+        onOpenChange={(v) => !v && setDeleteFolderModal(null)}
+        title={`Delete Folder "${deleteFolderModal?.name}"?`}
+        description="This will remove the folder collection. Your original media files will remain safely in your storage."
+        confirmText="Delete Folder"
+        variant="danger"
+        loading={deletingFolder}
+        onConfirm={async () => {
+          setDeletingFolder(true);
+          try {
+            await foldersApi.delete(deleteFolderModal.id);
+            setDeleteFolderModal(null);
+            onRefresh?.();
+          } catch (err) {
+            console.error('Failed to delete folder:', err);
+          } finally {
+            setDeletingFolder(false);
+          }
+        }}
       />
     </div>
   );
